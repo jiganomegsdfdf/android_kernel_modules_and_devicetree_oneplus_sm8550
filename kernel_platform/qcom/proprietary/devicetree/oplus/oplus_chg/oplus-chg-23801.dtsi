@@ -79,6 +79,7 @@
 					OPLUS_IC_FUNC_INIT
 					OPLUS_IC_FUNC_EXIT
 					OPLUS_IC_FUNC_REG_DUMP
+					OPLUS_IC_FUNC_BUCK_GET_BYBID_INFO
 				>;
 				virqs = <
 					OPLUS_IC_VIRQ_ERR
@@ -140,6 +141,9 @@
 					OPLUS_IC_FUNC_GAUGE_GET_DOD0_PASSED_Q
 					OPLUS_IC_FUNC_GAUGE_GET_QMAX
 					OPLUS_IC_FUNC_GAUGE_GET_QMAX_PASSED_Q
+					OPLUS_IC_FUNC_GAUGE_GET_BATTID_INFO
+					OPLUS_IC_FUNC_GAUGE_GET_REG_INFO
+					OPLUS_IC_FUNC_GAUGE_GET_CALIB_TIME
 				>;
 				virqs = <
 					OPLUS_IC_VIRQ_ERR
@@ -379,6 +383,9 @@
 		track,voocphy_type = <2>;
 		track,wired_max_power = <100000>;
 		track,wired_fast_chg_scheme = <1>;
+
+		track,gauge_status_ctrl;
+		track,external_gauge_num = <1>;
 	};
 };
 
@@ -950,6 +957,7 @@
 		oplus,batt_num = <2>;
 		oplus,ic_type = <OPLUS_CHG_IC_GAUGE>;
 		oplus,ic_index = <0>;
+		oplus,id-match-status = <1>; /* GPIO_STATUS_NC */
 		oplus,id-gpio = <&tlmm 73 0x00>;
 		pinctrl-names = "id_not_pull", "id_pull_up", "id_pull_down";
 		pinctrl-0 = <&bq27541_id_not_pull>;

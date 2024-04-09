@@ -773,9 +773,6 @@ static void android_vh_binder_special_task_handler(void *unused, struct binder_t
 
 	if (!t && w) {
 		t = container_of(w, struct binder_transaction, work);
-		if (!t) {
-			return;
-		}
 	}
 	obs = get_oplus_binder_struct(t, false);
 	if (is_obs_valid(obs) != OBS_VALID) {
@@ -874,21 +871,23 @@ static struct task_struct *get_current_async_thread(struct binder_transaction *t
 		if (count > CHECK_MAX_NODE_FOR_ASYNC_THREAD) {
 			break;
 		}
-		if (g_sched_debug && !IS_ERR_OR_NULL(ots)) {
-			trace_get_async_thread(proc, thread, count, ots->binder_thread_node, node,
-				has_async, time, "async_thread search");
-			oplus_binder_debug(BINDER_LOG_DEBUG, "proc(pid:%d tgid:%d comm:%s) thread(pid:%d tgid:%d comm:%s) \
-				max_threads:%d request:%d started:%d count:%d ots_node:0x%llx node:0x%llx time:%lldns\n",
-				proc ? proc->tsk->pid : 0,
-				proc ? proc->tsk->tgid : 0,
-				proc ? proc->tsk->comm : "null",
-				thread ? thread->task->pid : 0,
-				thread ? thread->task->tgid : 0,
-				thread ? thread->task->comm : "null",
-				proc ? proc->max_threads : 0,
-				proc ? proc->requested_threads : 0,
-				proc ? proc->requested_threads_started : 0,
-				count, (unsigned long long)(ots->binder_thread_node), (unsigned long long)node, time);
+		if (thread->task) {
+			if (g_sched_debug && !IS_ERR_OR_NULL(ots)) {
+				trace_get_async_thread(proc, thread, count, ots->binder_thread_node, node,
+					has_async, time, "async_thread search");
+				oplus_binder_debug(BINDER_LOG_DEBUG, "proc(pid:%d tgid:%d comm:%s) thread(pid:%d tgid:%d comm:%s) \
+					max_threads:%d request:%d started:%d count:%d ots_node:0x%llx node:0x%llx time:%lldns\n",
+					proc ? proc->tsk->pid : 0,
+					proc ? proc->tsk->tgid : 0,
+					proc ? proc->tsk->comm : "null",
+					thread ? thread->task->pid : 0,
+					thread ? thread->task->tgid : 0,
+					thread ? thread->task->comm : "null",
+					proc ? proc->max_threads : 0,
+					proc ? proc->requested_threads : 0,
+					proc ? proc->requested_threads_started : 0,
+					count, (unsigned long long)(ots->binder_thread_node), (unsigned long long)node, time);
+			}
 		}
 	}
 	time = ktime_get() - time;
