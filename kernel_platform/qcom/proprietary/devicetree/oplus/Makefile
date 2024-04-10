@@ -13,6 +13,7 @@ OPLUS_KALAMA_BOARDS += \
 		zonda-22635-kalama-overlay.dtbo \
 		zonda-23603-kalama-overlay.dtbo \
 		aston-23801-kalama-overlay.dtbo \
+		aston-23801-kalama-overlay-v2.dtbo \
 		aston-23861-kalama-overlay.dtbo \
 		aston-23801-kalama-overlay-T0.dtbo \
 		aston-23861-kalama-overlay-T0.dtbo \
