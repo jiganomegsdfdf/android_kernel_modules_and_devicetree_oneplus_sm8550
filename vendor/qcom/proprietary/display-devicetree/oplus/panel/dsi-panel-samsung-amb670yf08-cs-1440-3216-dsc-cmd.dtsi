@@ -2221,7 +2221,7 @@
 	oplus,dsi-global-hbm-case-id = <4>;
 
 	/* aod/fod config */
-	oplus,ofp-fp-type = <0x88>;
+	oplus,ofp-fp-type = <0x188>;
 	oplus,ofp-need-to-wait-data-before-aod-on;
 
 	/* factory config */

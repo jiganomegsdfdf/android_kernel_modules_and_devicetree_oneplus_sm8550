@@ -1843,7 +1843,7 @@
 	qcom,ulps-enabled;
 	qcom,dsi-select-clocks = "pll_byte_clk0", "pll_dsi_clk0";
 	/* ofp config */
-	oplus,ofp-fp-type = <0x08>;
+	oplus,ofp-fp-type = <0x108>;
 	oplus,ofp-need-to-wait-data-before-aod-on;
 	oplus,enhance_mipi_strength;
 
