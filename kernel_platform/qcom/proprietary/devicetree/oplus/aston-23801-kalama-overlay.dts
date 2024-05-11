@@ -15,6 +15,7 @@
 
     oplus,project-id = <23801>;
     oplus,hw-id = <OPLUS_EVT1 OPLUS_DVT1 OPLUS_PVT1>;
+    oplus,batt_id = <0>;
 };
 
 &tlmm {

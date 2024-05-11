@@ -103,6 +103,12 @@ config ABORT_MM_OPT
 	  When performing memory reclaim or memory compaction, it allows to abort when
 	  receive a signal or cpu-usage is too high.
 
+config LOOK_AROUND
+	tristate "memload optimization for look_around"
+	  default n
+	help
+	  define this config to add oplus look_around memload optimization feature
+
 source "mm/oplus_mm/hybridswap_zram/Kconfig"
 
 source "mm/oplus_mm/thp_zsmalloc/Kconfig"

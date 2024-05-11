@@ -1179,6 +1179,9 @@ int oplus_cpa_switch_end(struct oplus_mms *topic, enum oplus_chg_protocol_type t
 		return -EINVAL;
 	}
 	cpa = oplus_mms_get_drvdata(topic);
+	if (type != cpa->current_protocol_type)
+		return -EINVAL;
+
 	return schedule_work(&cpa->switch_end_work);
 
 }
