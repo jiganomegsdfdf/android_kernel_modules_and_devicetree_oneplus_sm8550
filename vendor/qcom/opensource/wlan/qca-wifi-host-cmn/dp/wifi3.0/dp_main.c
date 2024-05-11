@@ -8341,8 +8341,7 @@ dp_peer_setup_wifi3(struct cdp_soc_t *soc_hdl, uint8_t vdev_id,
 	status = dp_peer_mlo_setup(soc, peer, vdev->vdev_id, setup_info);
 	if (QDF_IS_STATUS_ERROR(status)) {
 		dp_peer_err("peer mlo setup failed");
-		qdf_trigger_self_recovery(NULL, QDF_REASON_UNSPECIFIED);
-		return QDF_STATUS_SUCCESS;
+		qdf_assert_always(0);
 	}
 
 	if (vdev_opmode != wlan_op_mode_monitor) {

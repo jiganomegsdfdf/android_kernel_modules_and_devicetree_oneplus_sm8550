@@ -102,8 +102,11 @@
 #define SA_SCENE_OPT_SET			(1 << 7)
 
 #define SYSTEM_UID             1000
+#define CAMERA_UID             1047
 #define FIRST_APPLICATION_UID  10000
 #define LAST_APPLICATION_UID   19999
+
+#define CAMERA_PROVIDER_NAME "provider@2.4-se"
 
 extern pid_t save_audio_tgid;
 extern pid_t save_top_app_tgid;
@@ -300,6 +303,11 @@ struct oplus_task_struct {
 	u64 pipeline_switch_out_ts;
 	int pipeline_cpu;
 #endif
+	/* for binder ux */
+	int binder_async_ux_enable;
+	bool binder_async_ux_sts;
+	int binder_thread_mode;
+	struct binder_node *binder_thread_node;
 } ____cacheline_aligned;
 
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_LOADBALANCE)
@@ -583,6 +591,13 @@ static inline void init_task_ux_info(struct task_struct *t)
 	ots->pipeline_enqueue_ts = 0;
 	ots->pipeline_switch_out_ts = 0;
 	ots->pipeline_cpu = -1;
+#endif
+#ifdef CONFIG_OPLUS_CAMERA_UX
+	if (CAMERA_UID == task_uid(t).val) {
+		if (!strncmp(t->comm, CAMERA_PROVIDER_NAME, 15)) {
+			ots->ux_state = SA_TYPE_HEAVY;
+		}
+	}
 #endif
 };
 

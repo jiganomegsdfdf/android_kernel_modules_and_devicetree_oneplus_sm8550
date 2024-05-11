@@ -1134,6 +1134,14 @@ void sched_assist_target_comm(struct task_struct *task, const char *buf)
 		ux_state = oplus_get_ux_state(task);
 		oplus_set_ux_state_lock(task, (ux_state | SA_TYPE_LIGHT), true);
 	}
+#ifdef CONFIG_OPLUS_CAMERA_UX
+	if (CAMERA_UID == task_uid(task).val) {
+		if (!strncmp(comm, CAMERA_PROVIDER_NAME, 15)) {
+			ux_state = oplus_get_ux_state(task);
+			oplus_set_ux_state_lock(task, (ux_state | SA_TYPE_HEAVY), true);
+		}
+	}
+#endif
 }
 
 void adjust_rt_lowest_mask(struct task_struct *p, struct cpumask *local_cpu_mask, int ret, bool force_adjust)

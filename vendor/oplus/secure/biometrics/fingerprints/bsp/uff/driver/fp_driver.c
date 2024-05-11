@@ -94,7 +94,7 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
 #include <linux/uaccess.h>
 #endif
-
+#include <linux/thermal.h>
 #include <linux/input.h>
 #include "include/oplus_fp_common.h"
 #include "include/wakelock.h"
@@ -339,6 +339,26 @@ static void irq_cleanup(struct fp_dev *fp_dev) {
     free_irq(fp_dev->irq, fp_dev);  // need modify
 }
 
+static int local_hbm_get_temperature(void)
+{
+    const char *shell_tz[] = {"shell_front", "shell_frame", "shell_back"};
+    int shell_temp = 40000;
+    int min_shell_temp = 40000;
+    unsigned int i = 0;
+    struct thermal_zone_device *tz = NULL;
+    pr_info("enter %s\n", __func__);
+    for (i = 0; i < ARRAY_SIZE(shell_tz); i++) {
+        tz = thermal_zone_get_zone_by_name(shell_tz[i]);
+        thermal_zone_get_temp(tz, &shell_temp);
+        pr_info("%s, %d : shell_temp = %d\n", __func__, i, shell_temp);
+        if (shell_temp < min_shell_temp) {
+            min_shell_temp = shell_temp;
+        }
+    }
+    pr_info("exit %s, min_shell_temp = %d\n", __func__, min_shell_temp);
+    return min_shell_temp / 1000;
+}
+
 static void fp_auto_send_touchdown(void)
 {
     struct fp_underscreen_info tp_info = {0};
@@ -560,6 +580,10 @@ static long fp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg) {
             fault_inject_set_block_msg(cmd);
             break;
 #endif // CONFIG_FP_INJECT_ENABLE
+        case FP_IOC_LHBM_TEMPERATURE:
+            pr_info("%s FP_IOC_LHBM_TEMPERATURE\n", __func__);
+            retval = __put_user(local_hbm_get_temperature(), (int32_t __user *)arg);
+            break;
         default:
             pr_warn("unsupport cmd:0x%x\n", cmd);
             break;

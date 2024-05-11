@@ -32,6 +32,7 @@
 #ifdef CONFIG_CONT_PTE_HUGEPAGE
 #include "chp_ext.h"
 #endif
+#include "../../mm_osvelte/mm-trace.h"
 
 enum scan_balance {
 	SCAN_EQUAL,
@@ -46,6 +47,16 @@ enum swapd_pressure_level {
 	LEVEL_CRITICAL,
 	LEVEL_COUNT
 };
+
+#if IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY) || IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
+struct panel_notify_context {
+	bool is_fold_dev;
+	void *notifier_cookie;
+	void *notifier_cookie_second;
+	struct drm_panel *active_panel;
+	struct drm_panel *active_panel_second;
+};
+#endif
 
 struct swapd_param {
 	unsigned int min_score;
@@ -79,6 +90,7 @@ struct hybridswapd_task {
 #define SWAPD_SHRINK_SIZE_PER_WINDOW 1024
 #define PAGES_TO_MB(pages) ((pages) >> 8)
 #define PAGES_PER_1MB (1 << 8)
+#define BATCH_PER_CYCLE_MB (32)
 
 typedef bool (*free_swap_is_low_func)(void);
 static free_swap_is_low_func free_swap_is_low_fp;
@@ -114,7 +126,7 @@ static atomic_t display_off = ATOMIC_LONG_INIT(0);
 #if IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY) || IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
 static struct notifier_block fb_notif;
 #elif IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY) || IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
-static void *g_panel_cookie;
+static struct panel_notify_context notif_cxt;
 #endif
 static unsigned long swapd_shrink_window = SWAPD_SHRINK_WINDOW;
 static unsigned long swapd_shrink_limit_per_window = SWAPD_SHRINK_SIZE_PER_WINDOW;
@@ -792,16 +804,6 @@ static unsigned int system_cur_avail_buffers(void)
 	return buffers >> 8; /* pages to MB */
 }
 
-static bool min_buffer_is_suitable(void)
-{
-	u32 curr_buffers = system_cur_avail_buffers();
-
-	if (curr_buffers >= get_min_avail_buffers_value())
-		return true;
-
-	return false;
-}
-
 static bool buffer_is_suitable(void)
 {
 	u32 curr_buffers = system_cur_avail_buffers();
@@ -882,13 +884,13 @@ static int zram_used_limit_mb_write(struct cgroup_subsys_state *css,
 static s64 zram_used_limit_mb_read(struct cgroup_subsys_state *css,
 				   struct cftype *cft)
 {
-	return zram_used_limit_pages << PAGE_SHIFT;
+	return (zram_used_limit_pages << PAGE_SHIFT) >> 20;
 }
 
 static int chp_per_reclaim_mib_write(struct cgroup_subsys_state *css,
 				     struct cftype *cft, s64 val)
 {
-	if (val <= 0 || val > 1024)
+	if (val < BATCH_PER_CYCLE_MB || val > 1024)
 		return 0;
 
 	chp_per_reclaim_mib = (unsigned int)val;
@@ -1054,15 +1056,6 @@ static unsigned long zram_total_pages(void)
 	return nr_zram ?: 1;
 }
 
-static bool zram_is_full(struct zram *zram)
-{
-	unsigned long nr_used, nr_total;
-
-	nr_used = zram_page_state(zram, ZRAM_STATE_USED);
-	nr_total = zram_page_state(zram, ZRAM_STATE_TOTAL);
-	return (nr_total - nr_used) < nr_total >> 6;
-}
-
 static bool zram_watermark_ok(void)
 {
 	long long diff_buffers;
@@ -1134,6 +1127,21 @@ static bool is_cpu_busy(void)
 }
 #endif
 
+/* core reclaim policy code start here */
+#if PAGE_SHIFT < 20
+#define P2M(pages)	((pages) >> (20 - PAGE_SHIFT))
+#define M2P(mb)		((mb) << (20 - PAGE_SHIFT))
+#else				/* PAGE_SHIFT > 20 */
+#define P2M(pages)	((pages) << (PAGE_SHIFT - 20))
+#define M2P(mb)		((mb) >> (PAGE_SHIFT - 20))
+#endif
+#define RECLAIM_CHP_FAILED_MAX (5)
+
+static const int chp_boost_factor = 19000;
+static const unsigned long max_boost_pages = M2P(256ul);
+static const unsigned long per_cycle_pages = M2P(16ul);
+static int chp_reclaim_failed;
+
 enum reclaim_type {
 	RT_NONE,
 	RT_PAGE,
@@ -1141,121 +1149,109 @@ enum reclaim_type {
 	NR_RT_TYPE,
 };
 
-char *reclaim_type_text[NR_RT_TYPE] = {
-	"->NONE",
-	"->P",
-	"->CHP"
+struct reclaim_control {
+	int min_cluster, loop;
+	enum reclaim_type type;
+	gfp_t gfp_mask;
+	long to_reclaim;
+	unsigned long watermark;
+	unsigned long interval;
+	unsigned long reclaimed;
+	bool (*boosted)(struct reclaim_control *rc);
 };
 
-#define INBALANCE_BASE_FACTOR 30
-#define CHP_OVER_COMPRESSED_RATIO 150 /* zram1 vs anon hugepages: 1.5 vs 1*/
-#define INBALANCE_CHP_FACTOR 15
-#define SHALLOW_CMA_POOL_FACTOR 2 /* cma pool is less than 2 * high */
-
-static inline int get_hybridswapd_reclaim_type(void)
+/*
+ * from kernel 6.1, chp pages use migration type, use
+ * chp_read_info_ext(CHP_EXT_CMD_POOL_CMA_COUNT) instead.
+ */
+static inline unsigned long chp_free_pages(void)
 {
-	int type = RT_NONE;
-	unsigned long anon_pg, anon_chp_pg, swap_pg,
-		      swap_chp_pg, base_factor, chp_factor;
 	struct huge_page_pool *pool = chp_pool;
-	bool cma_pool_shallow, cma_pool_size_huge;
 
-	anon_chp_pg = global_node_page_state(NR_ANON_THPS);
-	swap_chp_pg = zram_page_state(zram_arr[ZRAM_TYPE_CHP],
-				      ZRAM_STATE_USED);
-
-	anon_pg = global_node_page_state(NR_ANON_MAPPED) - anon_chp_pg;
-	swap_pg = zram_page_state(zram_arr[ZRAM_TYPE_BASEPAGE], ZRAM_STATE_USED);
-
-	base_factor = swap_pg * 100 / (anon_pg + 1);
-	chp_factor =  swap_chp_pg * 100 / (anon_chp_pg + 1);
-
-	cma_pool_shallow = pool->count[HPAGE_POOL_CMA] < SHALLOW_CMA_POOL_FACTOR * pool->high;
-	cma_pool_size_huge = pool->count[HPAGE_POOL_CMA] > pool->cma_count / 3;
-
-	if (!cma_pool_size_huge &&
-	    ((cma_pool_shallow && chp_factor < CHP_OVER_COMPRESSED_RATIO) ||
-	    (long)(base_factor - chp_factor) > INBALANCE_CHP_FACTOR))
-		type =  RT_CHP;
-	else if ((long)(chp_factor - base_factor) > INBALANCE_BASE_FACTOR)
-		type =  RT_PAGE;
-
-	trace_printk("@ %s:%d cma_count:%lu anon_pg: %lu anon_chp_pg: %lu swap_pg: %lu "
-		     "swap_chp_pg: %lu base_factor:%lu chp_factor:%lu  type:%s cma_count:%d  2*high:%d cma_pool_shallow:%d "
-		     "cma_pool_size_huge:%d (base_factor - chp_factor):%ld (chp_factor - base_factor):%ld @\n",
-		     __func__, __LINE__, pool->cma_count / 3, anon_pg, anon_chp_pg, swap_pg, swap_chp_pg, base_factor,
-		     chp_factor,  reclaim_type_text[type], pool->count[HPAGE_POOL_CMA],
-		     SHALLOW_CMA_POOL_FACTOR * pool->high,
-		     cma_pool_shallow, cma_pool_size_huge,
-		     (long)(base_factor - chp_factor),
-		     (long)(chp_factor - base_factor));
-
-	return type;
+	return pool->count[HPAGE_POOL_CMA] * HPAGE_CONT_PTE_NR;
 }
 
-static void wakeup_hybridswapd(pg_data_t *pgdat)
+static inline unsigned long chp_pool_watermark_pages(void)
 {
-	unsigned long curr_interval;
-	struct hybridswapd_task *hyb_task = PGDAT_ITEM_DATA(pgdat);
+	struct huge_page_pool *pool = chp_pool;
 
-	if (!hyb_task || !hyb_task->swapd)
-		return;
-
-	if (atomic_read(&swapd_pause)) {
-		count_swapd_event(SWAPD_MANUAL_PAUSE);
-		return;
-	}
-
-	if (atomic_read(&display_off))
-		return;
-
-#ifdef CONFIG_OPLUS_JANK
-	if (is_cpu_busy()) {
-		count_swapd_event(SWAPD_CPU_BUSY_BREAK_TIMES);
-		return;
-	}
-#endif
-
-	if (!waitqueue_active(&hyb_task->swapd_wait))
-		return;
-
-	if (!free_zram_is_ok())
-		return;
-
-	if (get_hybridswapd_reclaim_type() == RT_NONE &&
-	    min_buffer_is_suitable()) {
-		count_swapd_event(SWAPD_OVER_MIN_BUFFER_SKIP_TIMES);
-		return;
-	}
-
-	curr_interval = jiffies_to_msecs(jiffies - last_swapd_time);
-	if (curr_interval < swapd_skip_interval) {
-		count_swapd_event(SWAPD_EMPTY_ROUND_SKIP_TIMES);
-		return;
-	}
-
-	atomic_set(&hyb_task->swapd_wait_flag, 1);
-	wake_up_interruptible(&hyb_task->swapd_wait);
+	return pool->wmark[POOL_WMARK_HIGH] * HPAGE_CONT_PTE_NR;
 }
 
-static void wake_up_all_hybridswapds(void)
+static inline bool chp_boosted(struct reclaim_control *rc)
 {
-	pg_data_t *pgdat = NULL;
-	int nid;
-
-	for_each_online_node(nid) {
-		pgdat = NODE_DATA(nid);
-		wakeup_hybridswapd(pgdat);
-	}
+	return chp_free_pages() >= rc->watermark;
 }
 
-static bool free_swap_is_low(void)
+static inline bool system_boosted(struct reclaim_control *unused)
 {
-	struct sysinfo info;
+	return system_cur_avail_buffers() >= get_min_avail_buffers_value();
+}
 
-	si_swapinfo(&info);
+static inline bool boost_reclaim(struct reclaim_control *rc, bool scan)
+{
+	unsigned long diff, free, boost;
 
-	return (info.freeswap < get_free_swap_threshold_value());
+	diff = 0;
+	/* sometimes reclam chp pages failed multitiems. disable reclaim chp temorarily */
+	if (unlikely(chp_reclaim_failed > RECLAIM_CHP_FAILED_MAX)) {
+		chp_logi("chp reclaim failed over than %d times. try reclaim base\n",
+			 RECLAIM_CHP_FAILED_MAX);
+		chp_reclaim_failed = 0;
+		goto reclaim_base;
+	}
+
+	/* try reclaim chp at first */
+	boost = min(max_boost_pages, mult_frac(chp_pool_watermark_pages(),
+					       chp_boost_factor, 10000));
+	free = chp_free_pages();
+	if (boost > free)
+		diff = boost - free;
+
+	if (diff > per_cycle_pages) {
+		if (scan)
+			return true;
+
+		rc->type = RT_CHP;
+		rc->gfp_mask = GFP_KERNEL | POOL_USER_ALLOC;
+		rc->min_cluster = CHP_SWAP_CLUSTER_MAX;
+		rc->to_reclaim = diff;
+		rc->watermark = boost;
+		rc->boosted = chp_boosted;
+		/* max reclaim interval is 1 second */
+		rc->interval = 1 * HZ;
+		rc->reclaimed = 0;
+		return true;
+	}
+
+reclaim_base:
+	/* if system is in low mem available, reclaim anon base page. */
+	if (!system_boosted(rc)) {
+		unsigned long high, cur;
+
+		if (scan)
+			return true;
+
+		high = get_high_avail_buffers_value();
+		cur = system_cur_avail_buffers();
+		if (cur < high)
+			diff = high - cur;
+		diff = min(diff, (unsigned long)get_swapd_max_reclaim_size());
+		/* convert mib to pages */
+		diff = M2P(diff);
+
+		if (diff > per_cycle_pages) {
+			rc->type = RT_PAGE;
+			rc->gfp_mask = GFP_KERNEL;
+			rc->min_cluster = SWAP_CLUSTER_MAX;
+			rc->to_reclaim = diff;
+			rc->boosted = system_boosted;
+			rc->interval = 1 * HZ;
+			rc->reclaimed = 0;
+			return true;
+		}
+	}
+	return false;
 }
 
 static unsigned long calc_each_memcg_pages(int type)
@@ -1294,81 +1290,141 @@ static unsigned long calc_each_memcg_pages(int type)
 	return global_reclaimed;
 }
 
-static unsigned long shrink_memcg_chp_pages(void)
+static void shrink_memcg_anon_pages(struct reclaim_control *rc)
 {
+	unsigned long memcgs_pages = 0;
+	unsigned long start = jiffies;
 	struct mem_cgroup *memcg = NULL;
-	unsigned long tot_reclaimed = 0;
-	long nr_to_reclaim = 0;
-	unsigned long global_reclaimed = 0;
-	unsigned long batch_per_cycle = (SZ_32M >> PAGE_SHIFT);
-	unsigned long start_js = jiffies;
-	unsigned long reclaim_cycles;
-	gfp_t gfp_mask = GFP_KERNEL;
-	int type = RT_PAGE;
-	int zram_inx = 0;
-	int min_cluster = SWAP_CLUSTER_MAX;
 
-	nr_to_reclaim = chp_per_reclaim_mib * (SZ_1M >> PAGE_SHIFT);
-	type = get_hybridswapd_reclaim_type();
-	/* available mem is low, relaim nomal page! */
-	if (type == RT_NONE)
-		type = RT_PAGE;
-	else if (type == RT_CHP) {
-		zram_inx = 1;
-		gfp_mask |= POOL_USER_ALLOC;
-		min_cluster = CHP_SWAP_CLUSTER_MAX;
-	}
+	if (unlikely(!boost_reclaim(rc, false)))
+		return;
 
-	global_reclaimed = calc_each_memcg_pages(type);
-	if (unlikely(!global_reclaimed))
-		goto out;
+	if (unlikely(!free_zram_is_ok()))
+		return;
 
-	if (zram_is_full(zram_arr[zram_inx]))
-		goto out;
+	memcgs_pages = calc_each_memcg_pages(rc->type);
+	if (unlikely(memcgs_pages < per_cycle_pages))
+		return;
 
-	nr_to_reclaim = min(nr_to_reclaim, (long)global_reclaimed);
-	reclaim_cycles = nr_to_reclaim / batch_per_cycle;
+	rc->to_reclaim = min(rc->to_reclaim, (long)memcgs_pages);
+	rc->loop = rc->to_reclaim / per_cycle_pages;
+	mm_trace_fmt_begin("%d %ld", rc->type, rc->to_reclaim);
 again:
 	while ((memcg = get_next_memcg(memcg))) {
 		memcg_hybs_t *hybs;
 		unsigned long nr_reclaimed, to_reclaim;
 
+		/* if already boosted or zram is almost full or paused return */
+		if (rc->boosted(rc) || !free_zram_is_ok() ||
+		    atomic_read(&swapd_pause)) {
+			get_next_memcg_break(memcg);
+			goto out;
+		}
+
 		hybs = MEMCGRP_ITEM_DATA(memcg);
+		to_reclaim = mult_frac(per_cycle_pages, hybs->can_reclaimed,
+				       memcgs_pages);
 
-		to_reclaim = batch_per_cycle * hybs->can_reclaimed / global_reclaimed;
-
-		if (to_reclaim < min_cluster) {
+		if (to_reclaim < rc->min_cluster) {
 			hybs->can_reclaimed = 0;
 			continue;
 		}
 
 		nr_reclaimed = try_to_free_mem_cgroup_pages(memcg, to_reclaim,
-							    gfp_mask, true);
+							    rc->gfp_mask, true);
 
 		hybs->can_reclaimed -= nr_reclaimed;
 		if (hybs->can_reclaimed < 0)
 			hybs->can_reclaimed = 0;
 
-		tot_reclaimed += nr_reclaimed;
-
-		if (tot_reclaimed >= nr_to_reclaim) {
+		rc->reclaimed += nr_reclaimed;
+		if (rc->reclaimed >= rc->to_reclaim) {
 			get_next_memcg_break(memcg);
 			goto out;
 		}
 
-		if (swapd_nap_jiffies && time_after_eq(jiffies, start_js + swapd_nap_jiffies)) {
-			set_current_state(TASK_INTERRUPTIBLE);
-			schedule_timeout((jiffies - start_js) * 2);
-			start_js = jiffies;
+		if (time_after_eq(jiffies, start + rc->interval)) {
+			chp_logi("reclaiming is slow, exit loop");
+			get_next_memcg_break(memcg);
+			goto out;
 		}
 	}
 
-	if (!zram_is_full(zram_arr[zram_inx]) && --reclaim_cycles)
+	if (free_zram_is_ok() && --rc->loop)
 		goto again;
 out:
-	log_info("t: %s nr_to_reclaim: %lu total_reclaimed: %lu global_reclaimed: %lu\n",
-		 reclaim_type_text[type], nr_to_reclaim, tot_reclaimed, global_reclaimed);
-	return tot_reclaimed;
+	if (rc->type == RT_CHP && rc->reclaimed < rc->to_reclaim / 4)
+		chp_reclaim_failed += 1;
+
+	mm_trace_fmt_end();
+	chp_logi("type:%d to_reclaim:%ld reclaimed:%lu boosted:%d elapse:%dms\n",
+		 rc->type, rc->to_reclaim, rc->reclaimed, rc->boosted(rc),
+		 jiffies_to_msecs(jiffies - start));
+	return;
+}
+
+static void wakeup_hybridswapd(pg_data_t *pgdat)
+{
+	unsigned long curr_interval;
+	struct hybridswapd_task *hyb_task = PGDAT_ITEM_DATA(pgdat);
+
+	if (!hyb_task || !hyb_task->swapd)
+		return;
+
+	if (atomic_read(&swapd_pause)) {
+		count_swapd_event(SWAPD_MANUAL_PAUSE);
+		return;
+	}
+
+	if (atomic_read(&display_off))
+		return;
+
+#ifdef CONFIG_OPLUS_JANK
+	if (is_cpu_busy()) {
+		count_swapd_event(SWAPD_CPU_BUSY_BREAK_TIMES);
+		return;
+	}
+#endif
+
+	if (!waitqueue_active(&hyb_task->swapd_wait))
+		return;
+
+	if (!free_zram_is_ok())
+		return;
+
+	if (!boost_reclaim(NULL, true)) {
+		count_swapd_event(SWAPD_OVER_MIN_BUFFER_SKIP_TIMES);
+		return;
+	}
+
+	curr_interval = jiffies_to_msecs(jiffies - last_swapd_time);
+	if (curr_interval < swapd_skip_interval) {
+		count_swapd_event(SWAPD_EMPTY_ROUND_SKIP_TIMES);
+		return;
+	}
+
+	atomic_set(&hyb_task->swapd_wait_flag, 1);
+	wake_up_interruptible(&hyb_task->swapd_wait);
+}
+
+static void wake_up_all_hybridswapds(void)
+{
+	pg_data_t *pgdat = NULL;
+	int nid;
+
+	for_each_online_node(nid) {
+		pgdat = NODE_DATA(nid);
+		wakeup_hybridswapd(pgdat);
+	}
+}
+
+static bool free_swap_is_low(void)
+{
+	struct sysinfo info;
+
+	si_swapinfo(&info);
+
+	return (info.freeswap < get_free_swap_threshold_value());
 }
 
 static int swapd_update_cpumask(struct task_struct *tsk, char *buf,
@@ -1420,6 +1476,7 @@ static int hybridswapd(void *p)
 	struct task_struct *tsk = current;
 	struct hybridswapd_task *hyb_task = PGDAT_ITEM_DATA(pgdat);
 	unsigned long nr_reclaimed = 0;
+	struct reclaim_control rc;
 
 	/* save swapd pid for schedule strategy */
 	swapd_pid = tsk->pid;
@@ -1440,7 +1497,11 @@ static int hybridswapd(void *p)
 		}
 		count_swapd_event(SWAPD_WAKEUP);
 
-		nr_reclaimed = shrink_memcg_chp_pages();
+		rc.reclaimed = 0;
+		shrink_memcg_anon_pages(&rc);
+		mm_trace_int64("hyb_reclaimed", rc.reclaimed);
+		nr_reclaimed = rc.reclaimed;
+
 		last_swapd_time = jiffies;
 
 		if (nr_reclaimed < get_empty_round_check_threshold_value()) {
@@ -1662,41 +1723,86 @@ static void destroy_swapd_thread(void)
 }
 
 #if IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY) || IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
-static struct drm_panel *get_active_panel(void)
+/*
+ * xueying-sensor-22003.dtsi: ssc_interactive { is-folding-device; };
+ * whiteswan-22001-cape-oplus-sensor.dtsi: ssc_interactive { is-folding-device; };
+ */
+static int get_dev_type(void)
+{
+	struct device_node *node = NULL;
+
+	node = of_find_node_by_name(NULL, "ssc_interactive");
+	if (!node) {
+		log_err("ssc_interactive dts info missing\n");
+		return -ENOENT;
+	} else {
+		if (of_property_read_bool(node, "is-folding-device"))
+			notif_cxt.is_fold_dev = true;
+		else
+			notif_cxt.is_fold_dev = false;
+	}
+
+	log_info("get_dev_type: is-folding-device - %s\n", notif_cxt.is_fold_dev ? "yes" : "no");
+
+	return 0;
+}
+
+static void get_active_panel(void)
 {
 	int i;
 	int count;
-	struct device_node *panel_node = NULL;
-	struct drm_panel *panel = NULL;
+	int count_sec;
 	struct device_node *np = NULL;
+	struct device_node *node = NULL;
+	struct drm_panel *panel = NULL;
+	struct device_node *node_sec = NULL;
+	struct drm_panel *panel_sec = NULL;
 
 	np = of_find_node_by_name(NULL, "oplus,dsi-display-dev");
 	if (!np) {
 		log_err("oplus,dsi-display-dev node missing\n");
-		return NULL;
+		return;
 	}
 
-	log_warn("oplus,dsi-display-dev node found\n");
+	log_info("oplus,dsi-display-dev node found\n");
+
 	count = of_count_phandle_with_args(np, "oplus,dsi-panel-primary", NULL);
 	if (count <= 0) {
 		log_err("oplus,dsi-panel-primary missing\n");
-		goto not_found;
+		goto err_out;
 	}
 
 	for (i = 0; i < count; i++) {
-		panel_node = of_parse_phandle(np, "oplus,dsi-panel-primary", i);
-		panel = of_drm_find_panel(panel_node);
-		of_node_put(panel_node);
+		node = of_parse_phandle(np, "oplus,dsi-panel-primary", i);
+		panel = of_drm_find_panel(node);
+		of_node_put(node);
 		if (!IS_ERR(panel)) {
-			log_warn("active panel found\n");
-			goto found;
+			notif_cxt.active_panel = panel;
+			log_info("active panel found\n");
 		}
 	}
-not_found:
-	panel = NULL;
-found:
+
+	/* for folding phone */
+	if (notif_cxt.is_fold_dev) {
+		count_sec = of_count_phandle_with_args(np, "oplus,dsi-panel-secondary", NULL);
+		if (count_sec <= 0) {
+			log_err("oplus,dsi-panel-secondary missing\n");
+			goto err_out;
+		}
+
+		for (i = 0; i < count_sec; i++) {
+			node_sec = of_parse_phandle(np, "oplus,dsi-panel-secondary", i);
+			panel_sec = of_drm_find_panel(node_sec);
+			of_node_put(node_sec);
+			if (!IS_ERR(panel_sec)) {
+				notif_cxt.active_panel_second = panel_sec;
+				log_info("active secondary panel found\n");
+			}
+		}
+	}
+
+err_out:
 	of_node_put(np);
-	return panel;
 }
 
 static void bright_fb_notifier_callback(enum panel_event_notifier_tag tag,
@@ -1758,18 +1864,41 @@ static int mtk_bright_fb_notifier_callback(struct notifier_block *self,
 static void register_panel_event_notifier(void)
 {
 #if IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY) || IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
-	struct drm_panel *active_panel;
-	void *cookie;
-	active_panel = get_active_panel();
-	if (active_panel)
-		cookie = panel_event_notifier_register(PANEL_EVENT_NOTIFICATION_PRIMARY,
-			PANEL_EVENT_NOTIFIER_CLIENT_MM, active_panel, bright_fb_notifier_callback, NULL);
+	int ret;
+	void *cookie = ERR_PTR(-EINVAL);
 
-	if (active_panel && !IS_ERR(cookie)) {
-		log_warn("register_panel_event_notifier success\n");
-		g_panel_cookie = cookie;
+	ret = get_dev_type();
+	if (ret) {
+		log_err("get_dev_type failed, ret = %d\n", ret);
+	}
+
+	get_active_panel();
+
+	if (notif_cxt.active_panel)
+		cookie = panel_event_notifier_register(PANEL_EVENT_NOTIFICATION_PRIMARY,
+			PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_MM, notif_cxt.active_panel,
+			bright_fb_notifier_callback, NULL);
+
+	if (!IS_ERR(cookie)) {
+		log_info("%s primary succeed\n", __func__);
+		notif_cxt.notifier_cookie = cookie;
 	} else {
-		log_err("register_panel_event_notifier failed. need fix\n");
+		log_err("%s primary failed\n", __func__);
+		return;
+	}
+
+	/* for folding phone */
+	cookie = ERR_PTR(-EINVAL);
+	if (notif_cxt.active_panel_second)
+		cookie = panel_event_notifier_register(PANEL_EVENT_NOTIFICATION_SECONDARY,
+			PANEL_EVENT_NOTIFIER_CLIENT_SECONDARY_MM, notif_cxt.active_panel_second,
+			bright_fb_notifier_callback, NULL);
+
+	if (!IS_ERR(cookie)) {
+		log_info("%s secondary succeed\n", __func__);
+		notif_cxt.notifier_cookie_second = cookie;
+	} else {
+		log_err("%s secondary failed\n", __func__);
 	}
 #elif IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY)
 	fb_notif.notifier_call = bright_fb_notifier_callback;
@@ -1785,9 +1914,13 @@ static void register_panel_event_notifier(void)
 static void unregister_panel_event_notifier(void)
 {
 #if IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY) || IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
-	if (g_panel_cookie) {
-		panel_event_notifier_unregister(g_panel_cookie);
-		g_panel_cookie = NULL;
+	if (notif_cxt.notifier_cookie_second) {
+		panel_event_notifier_unregister(notif_cxt.notifier_cookie_second);
+		notif_cxt.notifier_cookie_second = NULL;
+	}
+	if (notif_cxt.notifier_cookie) {
+		panel_event_notifier_unregister(notif_cxt.notifier_cookie);
+		notif_cxt.notifier_cookie = NULL;
 	}
 #elif IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY)
 	msm_drm_unregister_client(&fb_notif);
