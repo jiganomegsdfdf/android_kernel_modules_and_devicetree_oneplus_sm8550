@@ -1178,6 +1178,25 @@ static inline unsigned long chp_pool_watermark_pages(void)
 	return pool->wmark[POOL_WMARK_HIGH] * HPAGE_CONT_PTE_NR;
 }
 
+static bool hybridswapd_need_pasue(void)
+{
+	if (atomic_read(&swapd_pause)) {
+		count_swapd_event(SWAPD_MANUAL_PAUSE);
+		return true;
+	}
+
+	if (atomic_read(&display_off))
+		return true;
+
+#ifdef CONFIG_OPLUS_JANK
+	if (is_cpu_busy()) {
+		count_swapd_event(SWAPD_CPU_BUSY_BREAK_TIMES);
+		return true;
+	}
+#endif
+	return false;
+}
+
 static inline bool chp_boosted(struct reclaim_control *rc)
 {
 	return chp_free_pages() >= rc->watermark;
@@ -1338,7 +1357,7 @@ again:
 			hybs->can_reclaimed = 0;
 
 		rc->reclaimed += nr_reclaimed;
-		if (rc->reclaimed >= rc->to_reclaim) {
+		if (rc->reclaimed >= rc->to_reclaim || hybridswapd_need_pasue()) {
 			get_next_memcg_break(memcg);
 			goto out;
 		}
@@ -1368,23 +1387,8 @@ static void wakeup_hybridswapd(pg_data_t *pgdat)
 	unsigned long curr_interval;
 	struct hybridswapd_task *hyb_task = PGDAT_ITEM_DATA(pgdat);
 
-	if (!hyb_task || !hyb_task->swapd)
+	if (!hyb_task || !hyb_task->swapd || hybridswapd_need_pasue())
 		return;
-
-	if (atomic_read(&swapd_pause)) {
-		count_swapd_event(SWAPD_MANUAL_PAUSE);
-		return;
-	}
-
-	if (atomic_read(&display_off))
-		return;
-
-#ifdef CONFIG_OPLUS_JANK
-	if (is_cpu_busy()) {
-		count_swapd_event(SWAPD_CPU_BUSY_BREAK_TIMES);
-		return;
-	}
-#endif
 
 	if (!waitqueue_active(&hyb_task->swapd_wait))
 		return;

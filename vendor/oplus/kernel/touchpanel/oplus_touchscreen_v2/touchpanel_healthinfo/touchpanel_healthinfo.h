@@ -91,7 +91,8 @@ typedef enum {
 } healthinfo_type;
 
 void reset_healthinfo_time_counter(u64 *time_counter);
-
+void reset_healthinfo_grip_time_record(void *tp_monitor_data,
+			void *tp_grip_info);
 u64 check_healthinfo_time_counter_timeout(u64 time_counter, int ms);
 
 int tp_healthinfo_report(void *tp_monitor_data, healthinfo_type type,

@@ -368,6 +368,12 @@ void oplus_set_ux_state_lock(struct task_struct *t, int ux_state, bool need_lock
 	else
 		rq = task_rq(t);
 
+	if (!raw_spin_is_locked(&t->pi_lock)) {
+		DEBUG_BUG_ON(1);
+	}
+	if (!raw_spin_is_locked(__rq_lockp(rq))) {
+		DEBUG_BUG_ON(2);
+	}
 	ots = get_oplus_task_struct(t);
 	if (IS_ERR_OR_NULL(ots) || !test_task_is_fair(t) || (ux_state == ots->ux_state)) {
 		goto out;
@@ -380,7 +386,7 @@ void oplus_set_ux_state_lock(struct task_struct *t, int ux_state, bool need_lock
 
 	orq = (struct oplus_rq *) rq->android_oem_data1;
 	spin_lock_irqsave(orq->ux_list_lock, irqflag);
-
+	smp_mb__after_spinlock();
 	ots->ux_state = ux_state;
 
 	if (!(ux_state & SCHED_ASSIST_UX_MASK)) {
@@ -442,7 +448,14 @@ noinline int tracing_mark_write(const char *buf)
 
 void ux_state_systrace_c(unsigned int cpu, struct task_struct *p)
 {
-	int ux_state = (oplus_get_ux_state(p) & (SCHED_ASSIST_UX_MASK | SA_TYPE_INHERIT));
+	int ux_state = 0;
+
+	/* When get_oplus_task_struct is empty, the error code is defined as 123456789
+	 * for debugging purposes */
+	if (IS_ERR_OR_NULL(get_oplus_task_struct(p)))
+		ux_state = SCHED_UX_STATE_DEBUG_MAGIC;
+	else
+		ux_state = (oplus_get_ux_state(p) & (SCHED_ASSIST_UX_MASK | SA_TYPE_INHERIT));
 
 	if (per_cpu(prev_ux_state, cpu) != ux_state) {
 		char buf[256];
@@ -821,6 +834,7 @@ static void enqueue_ux_thread(struct rq *rq, struct task_struct *p)
 
 	orq = (struct oplus_rq *) rq->android_oem_data1;
 	spin_lock_irqsave(orq->ux_list_lock, irqflag);
+	smp_mb__after_spinlock();
 	if (!oplus_rbnode_empty(&ots->ux_entry)) {
 		DEBUG_BUG_ON(1);
 		spin_unlock_irqrestore(orq->ux_list_lock, irqflag);
@@ -863,6 +877,7 @@ static void dequeue_ux_thread(struct rq *rq, struct task_struct *p)
 
 	orq = (struct oplus_rq *) rq->android_oem_data1;
 	spin_lock_irqsave(orq->ux_list_lock, irqflag);
+	smp_mb__after_spinlock();
 	if (!oplus_rbnode_empty(&ots->ux_entry)) {
 		u64 now = jiffies_to_nsecs(jiffies);
 

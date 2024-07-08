@@ -1,6 +1,6 @@
 {
     "best_target_priority": 1,
-    "bid": "11483813",
+    "bid": "11707804",
     "branch": "aosp_kernel-common-android13-5.15-2024-01",
     "branch_priority": 1,
     "build_configs": {},
@@ -12,7 +12,7 @@
     "enable_docker": true,
     "git-pull": null,
     "git-server": "https://android.googlesource.com",
-    "hostname": "r-1103eb7e97c0d965-s8g5",
+    "hostname": "r-aed28e15c2e98075-rm6g",
     "inc-build": false,
     "java-version": null,
     "last_logfile": null,
@@ -99,7 +99,7 @@
                     "name": "aosp",
                     "review": "https://android.googlesource.com/"
                 },
-                "revision": "b12d9fca8152e3113fcca724ee29270e24649842",
+                "revision": "70fb7171ac59337b053b5b9930050862fc8c6d44",
                 "upstream": "android13-5.15-2024-01"
             },
             {
@@ -291,7 +291,7 @@
     "proof_build": false,
     "repo-dict": {
         "kernel/build": "3288d7ac659694818a76e0208383f9a78fb74e65",
-        "kernel/common": "b12d9fca8152e3113fcca724ee29270e24649842",
+        "kernel/common": "70fb7171ac59337b053b5b9930050862fc8c6d44",
         "kernel/common-modules/virtual-device": "deede4fddac274575cb0e26498fc0f4a718229fb",
         "kernel/configs": "b3cc2bc03dab303c54a9ce1f709f8ee315eb311d",
         "kernel/manifest": "f7b2b651209e34d4fd40a9bf6ec685ed3815fedb",
@@ -315,8 +315,8 @@
     "reset_image_build": false,
     "rollout": [],
     "src_ctrl": "repo",
-    "sync_finish_time": 1708609944.6941013,
-    "sync_start_time": 1708609924.2446196,
+    "sync_finish_time": 1712914900.4706419,
+    "sync_start_time": 1712914889.9924707,
     "sync_succeed": 1,
     "target": {
         "apiary_target": "kernel_aarch64",
@@ -336,7 +336,6 @@
             "gki-info.txt",
             "zsmalloc.ko",
             "boot-gz.img",
-            "manifest_11483813.xml",
             "Image",
             "kernel-uapi-headers.tar.gz",
             "abi.prop",
@@ -345,6 +344,7 @@
             "System.map",
             "gki_certification_tools.tar.gz",
             "multiple.intoto.jsonl",
+            "manifest_11707804.xml",
             "zram.ko",
             "abi_symbollist",
             "vmlinux.symvers",
@@ -372,19 +372,19 @@
             "logs/resource_utilization/cpu_usage.json",
             "BUILD_INFO"
         ],
-        "dist-dir": "/buildbot/dist_dirs/aosp_kernel-common-android13-5.15-2024-01-linux-kernel_aarch64/11483813",
+        "dist-dir": "/buildbot/dist_dirs/aosp_kernel-common-android13-5.15-2024-01-linux-kernel_aarch64/11707804",
         "name": "kernel_aarch64",
         "rules": [
             [
-                "DIST_DIR=/buildbot/dist_dirs/aosp_kernel-common-android13-5.15-2024-01-linux-kernel_aarch64/11483813 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh -j80",
+                "DIST_DIR=/buildbot/dist_dirs/aosp_kernel-common-android13-5.15-2024-01-linux-kernel_aarch64/11707804 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh -j80",
                 "build.log",
                 true,
                 false
             ]
         ],
-        "storage_path": "/bigstore/android-build/builds/aosp_kernel-common-android13-5.15-2024-01-linux-kernel_aarch64/11483813/d0221b3301fd69330d92018e4ca61118dbb81c22ec28a5c17e2a35147305dc6d",
-        "target_finish_time": 1708611536.8529441,
-        "target_start_time": 1708609946.422195,
+        "storage_path": "/bigstore/android-build/builds/aosp_kernel-common-android13-5.15-2024-01-linux-kernel_aarch64/11707804/af242423531a4fd47bb155936ca3cd3e115e0575b1007757fad585e99ab38bbe",
+        "target_finish_time": 1712916243.7459574,
+        "target_start_time": 1712914901.7797446,
         "target_status": 1
     },
     "trident_usage": {
@@ -393,62 +393,57 @@
     },
     "use_goma": false,
     "worknode": {
-        "containerId": "L06800030002104485",
-        "creationTimeMillis": "1708609869587",
+        "containerId": "L73400030003157813",
+        "creationTimeMillis": "1712914813709",
         "currentAttempt": {
-            "attemptId": "U5wd2fasa9TTlqbBwIj6aA==",
+            "attemptId": "KLBtS3j1M4cKQg9jqosqAw==",
             "progressMessages": [
                 {
-                    "displayMessage": "Build 11483813 for node L06800030002104485:N34500030034134268 has been inserted",
-                    "messageString": "Build 11483813 for node L06800030002104485:N34500030034134268 has been inserted",
-                    "timeMillis": "1708609873805"
+                    "displayMessage": "Build 11707804 for node L73400030003157813:N61600030050701329 has been inserted",
+                    "messageString": "Build 11707804 for node L73400030003157813:N61600030050701329 has been inserted",
+                    "timeMillis": "1712914816749"
                 },
                 {
-                    "displayMessage": "Build 11483813 for node L06800030002104485:N34500030034134268 has been popped",
-                    "messageString": "Build 11483813 for node L06800030002104485:N34500030034134268 has been popped",
-                    "timeMillis": "1708609878123"
+                    "displayMessage": "Build 11707804 for node L73400030003157813:N61600030050701329 has been popped",
+                    "messageString": "Build 11707804 for node L73400030003157813:N61600030050701329 has been popped",
+                    "timeMillis": "1712914822007"
                 },
                 {
-                    "displayMessage": "Build 11483813 for node L06800030002104485:N34500030034134268 has been popped",
-                    "messageString": "Build 11483813 for node L06800030002104485:N34500030034134268 has been popped",
-                    "timeMillis": "1708609881566"
-                },
-                {
-                    "displayMessage": "Build 11483813 for node L06800030002104485:N34500030034134268 has been popped",
-                    "messageString": "Build 11483813 for node L06800030002104485:N34500030034134268 has been popped",
-                    "timeMillis": "1708609901464"
+                    "displayMessage": "Build 11707804 for node L73400030003157813:N61600030050701329 has been popped",
+                    "messageString": "Build 11707804 for node L73400030003157813:N61600030050701329 has been popped",
+                    "timeMillis": "1712914867180"
                 }
             ],
-            "startTimeMillis": "1708609871100"
+            "startTimeMillis": "1712914814459"
         },
         "heartbeatTimeMillis": "1200000",
-        "id": "L06800030002104485:N34500030034134268",
+        "id": "L73400030003157813:N61600030050701329",
         "inputEdges": [
             {
-                "neighborId": "L06800030002104485:N64400030034134265"
+                "neighborId": "L73400030003157813:N95300030050701326"
             }
         ],
         "isFinal": false,
-        "lastUpdatedMillis": "1708609901556",
+        "lastUpdatedMillis": "1712914867272",
         "nodeClass": "postsubmit",
         "retryStatus": {
             "maximumRetries": 4,
             "retryCount": 0
         },
-        "revision": "BAnIAuxSnWSJ5SMRTDQjOA==",
+        "revision": "F/cvdsIGCgpxmvPOMdXMLQ==",
         "status": "scheduled",
         "statusHistorys": [
             {
                 "status": "created",
-                "timestampMillis": "1708609869587"
+                "timestampMillis": "1712914813709"
             },
             {
                 "status": "pending",
-                "timestampMillis": "1708609870138"
+                "timestampMillis": "1712914813906"
             },
             {
                 "status": "scheduled",
-                "timestampMillis": "1708609871100"
+                "timestampMillis": "1712914814459"
             }
         ],
         "workExecutorType": "submittedBuild",
@@ -458,8 +453,8 @@
                 "branchConfig": {
                     "sloTier": "bestEffort"
                 },
-                "buildId": "11483813",
-                "gerritPollerTimestamp": "1708609848536",
+                "buildId": "11707804",
+                "gerritPollerTimestamp": "1712914786526",
                 "manuallyTriggered": false,
                 "syncTimeoutSecond": 2700,
                 "target": {

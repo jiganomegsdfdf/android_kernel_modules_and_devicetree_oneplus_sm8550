@@ -167,6 +167,8 @@
 #define ABS_TOUCH_COST_TIME_DAEMON  0x23
 #define MAX_TOUCH_COST_TIME         1000 * 1000
 
+#define MAX_TEMPERATURE             70
+#define MIN_TEMPERATURE             -40
 /*********PART3:Struct Area**********************/
 typedef enum {
 	TYPE_ONCELL = 0,   /*such as synaptic s3706*/
@@ -681,6 +683,14 @@ struct monitor_data {
 
 	ktime_t irq_to_report_timer;
 
+	u64 total_grip_time_no_touch;
+	u64 total_grip_time_no_touch_one_sec;
+	u64 total_grip_time_no_touch_two_sec;
+	u64 total_grip_time_no_touch_three_sec;
+	u64 total_grip_time_no_touch_five_sec;
+	u64 grip_start_time_no_touch;
+	grip_time_record_type grip_time_record_flag;
+	struct grip_monitor_data  *p_grip_moni_data;
 
 	u32 edge_tx_ewr_zero_count;
 	u32 edge_rx_ewr_zero_count;
@@ -732,11 +742,16 @@ struct monitor_data {
 
 	int avdd;
 	int vddi;
+	u64 abnormal_temperature_count;
 	u64 pm_resume_count;
 	u64 pm_suspend_count;
 	u64 force_bus_ready_count;
 	u64 bus_not_ready_early_event_count;
 	u64 bus_not_ready_event_count;
+	u64 bus_not_ready_notify_count;
+	u64 bus_not_ready_off_early_event_count;
+	u64 bus_not_ready_off_event_count;
+	u64 bus_not_ready_tp_suspend_count;
 	/*max count*/
 	u64 irq_need_dev_resume_max_count;
 	/*all count*/
@@ -894,6 +909,7 @@ struct touchpanel_data {
 	int glove_enable;                                   /*control state of glove gesture*/
 	bool force_bus_ready_support;                       /*force bus ready to true afer notify*/
 	bool skip_reinit_device_support;                    /*spi need skip complete_all, prevent error in access reg*/
+	bool edge_pull_out_support;                         /*feature used to edge coordinates pull out*/
 	/******For FW update area********/
 	bool loading_fw;                                    /*touchpanel FW updating*/
 	int firmware_update_type;                           /*firmware_update_type: 0=check firmware version 1=force update; 2=for FAE debug*/
@@ -985,6 +1001,7 @@ struct touchpanel_data {
 
 	/******For prevention area********/
 	struct mutex		report_mutex;                /*mutex for lock input report flow*/
+	struct kernel_grip_info *grip_info;	/*grip setting and resources*/
 
 	/******For comon data area********/
 	struct mutex		mutex;                       /*mutex for lock i2c related flow*/
@@ -1125,6 +1142,9 @@ struct touchpanel_data {
 	u32 smooth_level_default;
 	u32 sensitive_level_default;
 
+	/******For smooth report_threshold area********/
+	bool diaphragm_touch_support;
+	u32 diaphragm_touch_level_chosen;
 
 	/******For lcd fps area********/
 	bool lcd_tp_refresh_support;                      /*lcd nofity tp refresh fps switch*/
@@ -1231,10 +1251,14 @@ struct oplus_touchpanel_operations {
 	uint8_t (*get_noise_modetest)(void *chip_data);
 	/*If the tp ic need do something, use this!*/
 	void (*tp_queue_work_prepare)(void *chip_data);
+
+	void (*enable_kernel_grip)(void *chip_data,
+				   struct kernel_grip_info *grip_info);          /*enable kernel grip in fw*/
 	bool (*tp_irq_throw_away)(void *chip_data);
 	void (*rate_white_list_ctrl)(void *chip_data, int value);
 	int (*smooth_lv_set)(void *chip_data, int level);
 	int (*sensitive_lv_set)(void *chip_data, int level);
+	int (*diaphragm_touch_lv_set)(void *chip_data, int level);
 	int (*send_temperature)       (void *chip_data, int value, bool status);
 	int (*tp_refresh_switch)(void *chip_data, int fps);
 	void (*set_gesture_state)(void *chip_data, int state);

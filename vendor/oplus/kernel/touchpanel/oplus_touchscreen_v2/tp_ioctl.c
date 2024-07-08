@@ -11,6 +11,7 @@
 
 #include "touchpanel_common.h"
 #include "touch_comon_api/touch_comon_api.h"
+#include "touchpanel_prevention/touchpanel_prevention.h"
 #include "tp_ioctl.h"
 #include "message_list.h"
 #include "touch_pen/touch_pen_core.h"
@@ -136,6 +137,13 @@ static void report_point(struct touchpanel_data *ts, struct touch_point_report *
 	input_sync(ts->input_dev);
 	obj_attention = get_point_info_from_point_report(points_info, points, num);
 	mutex_unlock(&ts->report_mutex);
+
+	if (ts->health_monitor_support) {
+		ts->monitor_data.touch_points = points_info;
+		ts->monitor_data.touch_num = down_num;
+		ts->monitor_data.direction = (ts->grip_info != NULL) ? ts->grip_info->touch_dir : ts->limit_enable;
+		tp_healthinfo_report(&ts->monitor_data, HEALTH_TOUCH, &obj_attention);
+	}
 }
 
 static void report_point_ext(struct touchpanel_data *ts, struct touch_point_report *points, int num)
@@ -193,6 +201,13 @@ static void report_point_ext(struct touchpanel_data *ts, struct touch_point_repo
 	input_sync(ts->input_dev);
 	obj_attention = get_point_info_from_point_report(points_info, points, num);
 	mutex_unlock(&ts->report_mutex);
+
+	if (ts->health_monitor_support) {
+		ts->monitor_data.touch_points = points_info;
+		ts->monitor_data.touch_num = down_num;
+		ts->monitor_data.direction = (ts->grip_info != NULL) ? ts->grip_info->touch_dir : ts->limit_enable;
+		tp_healthinfo_report(&ts->monitor_data, HEALTH_TOUCH, &obj_attention);
+	}
 }
 
 

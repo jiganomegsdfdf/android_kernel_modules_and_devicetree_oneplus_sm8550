@@ -13,6 +13,7 @@
 
 #include "../../touchpanel_common.h"
 #include "../synaptics_common.h"
+#include "../../touchpanel_prevention/touchpanel_prevention.h"
 
 #ifdef TPD_DEVICE
 #undef TPD_DEVICE
@@ -367,6 +368,19 @@ enum flash_data {
 	LCM_DATA = 1,
 	OEM_DATA,
 	PPDT_DATA,
+};
+
+enum stretch_status {
+	EDGE_STRETCH_OFF = 0,
+	EDGE_STRETCH_RIGHT,
+	EDGE_STRETCH_LEFT,
+};
+
+enum smart_mode {
+	DIAPHRAGM_DEFAULT_MODE = 0,
+	DIAPHRAGM_FILM_MODE = 1,
+	DIAPHRAGM_WATERPROO_MODE = 2,
+	DIAPHRAGM_FILM_WATERPROO_MODE = 3,
 };
 
 struct syna_tcm_buffer {
@@ -771,5 +785,9 @@ int syna_tcm_rmi_write(struct syna_tcm_data *tcm_info,
 */
 extern void tp_fw_auto_reset_handle(struct touchpanel_data *ts);
 
+struct syna_support_grip_zone {
+	char name[GRIP_TAG_SIZE];
+	int (*handle_func)(void *chip_data, struct grip_zone_area *grip_zone, bool enable);
+};
 
 #endif  /*_SYNAPTICS_TCM_CORE_H_*/

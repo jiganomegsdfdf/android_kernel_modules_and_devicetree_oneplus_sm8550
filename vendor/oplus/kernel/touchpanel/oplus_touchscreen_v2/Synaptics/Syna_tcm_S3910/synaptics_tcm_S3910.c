@@ -12,7 +12,78 @@
 #include <linux/platform_data/spi-mt65xx.h>
 #endif
 
+
+static int syna_ver_bottom_large_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable);
+static int syna_hor90_corner_large_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable);
+static int syna_hor270_corner_large_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable);
+static int syna_long_dead_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable);
+static int syna_short_dead_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable);
+static int syna_long_condtion_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable);
+static int syna_short_condtion_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable);
+static int syna_long_large_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable);
+static int syna_short_large_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable);
+
+static int syna_set_fw_grip_area(void *chip_data,
+				 struct grip_zone_area *grip_zone,
+				 bool enable);
+static void syna_set_grip_touch_direction(void *chip_data, uint8_t dir);
+static int syna_set_no_handle_area(void *chip_data,
+				   struct kernel_grip_info *grip_info);
+static int syna_set_large_thd(void *chip_data, int large_thd);
+static int syna_set_large_corner_frame_limit(void *chip_data, int frame);
+static int syna_set_disable_level(void *chip_data, uint8_t level);
 static int syna_glove_mode(void *chip_data, bool enable);
+static void syna_set_touch_direction(void *chip_data, uint8_t dir);
+
+
+static struct fw_grip_operations syna_fw_grip_op = {
+	.set_fw_grip_area             = syna_set_fw_grip_area,
+	.set_touch_direction          = syna_set_grip_touch_direction,
+	.set_no_handle_area           = syna_set_no_handle_area,
+	.set_large_ver_thd            = syna_set_large_thd,
+	.set_large_corner_frame_limit = syna_set_large_corner_frame_limit,
+	.set_disable_level            = syna_set_disable_level,
+};
+
+static struct syna_support_grip_zone syna_grip[] = {
+	{"ver_left_bottom_large", syna_ver_bottom_large_handle_func},
+	/*{"ver_right_bottom_large", ver_bottom_large_handle_func},*/
+	{"hor90_left_corner_large", syna_hor90_corner_large_handle_func},
+	/*{"hor90_right_corner_large", hor_corner_large_handle_func},*/
+	{"hor270_left_corner_large", syna_hor270_corner_large_handle_func},
+	/*{"hor270_right_corner_large", hor_corner_large_handle_func},*/
+	{"ver_left_dead", syna_long_dead_zone_handle_func},
+	/*{"ver_right_dead", long_size_dead_zone_handle_func},*/
+	{"hor_left_dead", syna_short_dead_zone_handle_func},
+	/*{"hor_right_dead", short_size_dead_zone_handle_func},*/
+	{"ver_left_condtion", syna_long_condtion_zone_handle_func},
+	/*{"ver_right_condtion", long_size_condtion_zone_handle_func},*/
+	{"hor_left_condtion", syna_short_condtion_zone_handle_func},
+	/*{"hor_right_condtion", short_size_condtion_zone_handle_func},*/
+	{"ver_left_large", syna_long_large_zone_handle_func},
+	/*{"ver_right_large", long_size_large_zone_handle_func},*/
+	{"hor_left_large", syna_short_large_zone_handle_func},
+	/*{"hor_right_large", short_size_large_zone_handle_func},*/
+	{},
+};
 
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
 const struct mtk_chip_config st_spi_ctrdata = {
@@ -3193,6 +3264,10 @@ static int syna_tcm_set_game_mode(struct syna_tcm_data *tcm_info, int enable)
 			TPD_INFO("Failed to set dynamic noise length config\n");
 			return retval;
 		}*/
+
+		if (ts->edge_pull_out_support) {
+			syna_set_touch_direction(tcm_info, tcm_info->touch_direction);
+		}
 
 		if (tcm_info->extreme_game_report_rate) {
 			switch (ts->noise_level) {
@@ -6636,9 +6711,41 @@ static int syna_specific_resume_operate(void *chip_data, struct specific_resume_
 
 static void syna_set_touch_direction(void *chip_data, uint8_t dir)
 {
+	int retval = 0;
 	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	struct touchpanel_data *ts = spi_get_drvdata(tcm_info->client);
 
 	tcm_info->touch_direction = dir;
+	if (ts->edge_pull_out_support) {
+		if (tcm_info->game_mode) {
+			switch (tcm_info->touch_direction) {
+			case LANDSCAPE_SCREEN_90:
+				retval = syna_tcm_set_dynamic_config(tcm_info, DC_GRIP_ROATE_TO_HORIZONTAL_LEVEL, EDGE_STRETCH_RIGHT);
+				if (retval < 0) {
+					TPD_INFO("Failed to set touch direction\n");
+				}
+				break;
+			case LANDSCAPE_SCREEN_270:
+				retval = syna_tcm_set_dynamic_config(tcm_info, DC_GRIP_ROATE_TO_HORIZONTAL_LEVEL, EDGE_STRETCH_LEFT);
+				if (retval < 0) {
+					TPD_INFO("Failed to set touch direction\n");
+				}
+				break;
+			default:
+				retval = syna_tcm_set_dynamic_config(tcm_info, DC_GRIP_ROATE_TO_HORIZONTAL_LEVEL, EDGE_STRETCH_OFF);
+				if (retval < 0) {
+					TPD_INFO("Failed to set touch direction\n");
+				}
+				break;
+			}
+			TPD_INFO("set touch direction = 0x%02x!\n", tcm_info->touch_direction);
+		} else {
+			retval = syna_tcm_set_dynamic_config(tcm_info, DC_GRIP_ROATE_TO_HORIZONTAL_LEVEL, EDGE_STRETCH_OFF);
+			if (retval < 0) {
+				TPD_INFO("Failed to set touch direction\n");
+			}
+		}
+	}
 }
 
 static uint8_t syna_get_touch_direction(void *chip_data)
@@ -6839,6 +6946,856 @@ static int syna_tcm_sensitive_lv_set(void *chip_data, int level)
 	return 0;
 }
 
+static int syna_tcm_diaphragm_touch_lv_set(void *chip_data, int level)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	unsigned short regval = 0;
+	int retval = 0;
+
+	retval = syna_tcm_get_dynamic_config(tcm_info, DC_LOW_TEMP_ENABLE, &regval);
+	if (retval < 0) {
+		TPD_INFO("Failed to get diaphragm_touch config\n");
+		return 0;
+	}
+
+	switch (level) {
+	case DIAPHRAGM_DEFAULT_MODE:
+		regval = 0xfcff & regval;
+		break;
+	case DIAPHRAGM_FILM_MODE:
+		regval = 0xfcff & regval;
+		regval = 0x0100 | regval;
+		break;
+	case DIAPHRAGM_WATERPROO_MODE:
+		regval = 0xfcff & regval;
+		regval = 0x0200 | regval;
+		break;
+	case DIAPHRAGM_FILM_WATERPROO_MODE:
+		regval = 0xfcff & regval;
+		regval = 0x0200 | regval;
+		break;
+	default:
+		TPD_INFO("error, level = %d", level);
+		return 0;
+	}
+
+	retval = syna_tcm_set_dynamic_config(tcm_info, DC_LOW_TEMP_ENABLE, regval);
+	if (retval < 0) {
+		TPD_INFO("Failed to set diaphragm_touch config\n");
+		return 0;
+	}
+
+	retval = syna_tcm_get_dynamic_config(tcm_info, DC_LOW_TEMP_ENABLE, &regval);
+	if (retval < 0) {
+		TPD_INFO("Failed to get diaphragm_touch config\n");
+		return 0;
+	}
+	TPD_INFO("diaphragm_touch_lv_set level = %d regval = %d", level, regval);
+
+	return 0;
+}
+
+/*********** Start of kernel grip callbacks*************************/
+
+static void syna_set_grip_area_disable(void *chip_data)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+
+	CLR_BIT(tcm_info->dc_cfg.g_dark_zone_enable, 0x00FF);
+	tcm_info->dc_cfg.g_abs_dark_sel = 0;
+}
+
+static int syna_send_grip_to_chip(void *chip_data)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	int ret = -1;
+	unsigned short len = 0;
+
+	if (!tcm_info || *tcm_info->in_suspend) {
+		TPD_INFO("%s: set grip in TP suspend !\n", __func__);
+		return 0;
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_ROATE_TO_HORIZONTAL_LEVEL,
+					  tcm_info->dc_cfg.g_roate_hori_level);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_ROATE_TO_HORIZONTAL_LEVEL\n", __func__);
+		return ret;
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_ABS_DARK_X,
+					  tcm_info->dc_cfg.g_abs_dark_x);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_ABS_DARK_X\n", __func__);
+		return ret;
+	}
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_ABS_DARK_Y,
+					  tcm_info->dc_cfg.g_abs_dark_y);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_ABS_DARK_Y\n", __func__);
+		return ret;
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_ABS_DARK_U,
+					  tcm_info->dc_cfg.g_abs_dark_u);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_ABS_DARK_U\n", __func__);
+		return ret;
+	}
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_ABS_DARK_V,
+					  tcm_info->dc_cfg.g_abs_dark_v);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_ABS_DARK_V\n", __func__);
+		return ret;
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_CONDTION_ZONE,
+					  tcm_info->dc_cfg.g_condtion_zone);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_CONDTION_ZONE\n", __func__);
+		return ret;
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_DARK_ZONE_X,
+					  tcm_info->dc_cfg.g_dark_zone_x);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_DARK_ZONE_X\n", __func__);
+		return ret;
+	}
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_DARK_ZONE_Y,
+					  tcm_info->dc_cfg.g_dark_zone_y);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_DARK_ZONE_Y\n", __func__);
+		return ret;
+	}
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_ABS_DARK_SEL,
+					  tcm_info->dc_cfg.g_abs_dark_sel);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_ABS_DARK_SEL\n", __func__);
+		return ret;
+	}
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_DARK_ZONE_ENABLE,
+					  tcm_info->dc_cfg.g_dark_zone_enable);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_DARK_ZONE_ENABLE\n", __func__);
+		return ret;
+	}
+
+	len = tcm_info->dc_cfg.g_special_zone_l;
+	if (tcm_info->touch_direction != VERTICAL_SCREEN) {
+		len = 0;
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_SPECIAL_ZONE_L,
+					  len);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_SPECIAL_ZONE_L\n", __func__);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int syna_ver_bottom_large_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	unsigned short value = 0;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (tcm_info->touch_direction != VERTICAL_SCREEN) {
+		return 0;
+	}
+
+	TPD_INFO("%s:x width %d, y width %d.\n", __func__, grip_zone->x_width, grip_zone->y_width);
+
+	if ((grip_zone->grip_side >> TYPE_LONG_CORNER_SIDE) & 0x01) {
+		value = grip_zone->x_width / 30;
+		if (value > 0x0F) {
+			value = 0x0F;
+		}
+		value = value + (value << 4);
+		tcm_info->dc_cfg.g_dark_zone_x = value;
+
+		value = grip_zone->y_width / 30;
+		if (value > 0x0F) {
+			value = 0x0F;
+		}
+		value = value + (value << 4);
+		tcm_info->dc_cfg.g_dark_zone_y = value;
+
+	} else {
+		return 0;
+	}
+
+	if (enable) {
+		SET_BIT(tcm_info->dc_cfg.g_dark_zone_enable, 0x05);
+	} else {
+		CLR_BIT(tcm_info->dc_cfg.g_dark_zone_enable, 0x05);
+	}
+
+	return 0;
+}
+
+static int syna_hor90_corner_large_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	unsigned short value = 0;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (tcm_info->touch_direction != LANDSCAPE_SCREEN_90) {
+		return 0;
+	}
+
+	TPD_INFO("%s:x width %d, y width %d.\n", __func__, grip_zone->x_width, grip_zone->y_width);
+
+	if ((grip_zone->grip_side >> TYPE_SHORT_CORNER_SIDE) & 0x01) {
+		value = grip_zone->x_width / 30;
+		if (value > 0x0F) {
+			value = 0x0F;
+		}
+		value = value + (value << 4);
+		tcm_info->dc_cfg.g_dark_zone_x = value;
+
+		value = grip_zone->y_width / 30;
+		if (value > 0x0F) {
+			value = 0x0F;
+		}
+		value = value + (value << 4);
+		tcm_info->dc_cfg.g_dark_zone_y = value;
+
+	} else {
+		return 0;
+	}
+
+	if (enable) {
+		SET_BIT(tcm_info->dc_cfg.g_dark_zone_enable, 0x03);
+	} else {
+		CLR_BIT(tcm_info->dc_cfg.g_dark_zone_enable, 0x03);
+	}
+
+	return 0;
+}
+
+static int syna_hor270_corner_large_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	unsigned short value = 0;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (tcm_info->touch_direction != LANDSCAPE_SCREEN_270) {
+		return 0;
+	}
+
+	TPD_INFO("%s:x width %d, y width %d.\n", __func__, grip_zone->x_width, grip_zone->y_width);
+
+	if ((grip_zone->grip_side >> TYPE_SHORT_CORNER_SIDE) & 0x01) {
+		value = grip_zone->x_width / 30;
+		if (value > 0x0F) {
+			value = 0x0F;
+		}
+		value = value + (value << 4);
+		tcm_info->dc_cfg.g_dark_zone_x = value;
+
+		value = grip_zone->y_width / 30;
+
+		if (value > 0x0F) {
+			value = 0x0F;
+		}
+		value = value + (value << 4);
+		tcm_info->dc_cfg.g_dark_zone_y = value;
+
+	} else {
+		return 0;
+	}
+
+	if (enable) {
+		SET_BIT(tcm_info->dc_cfg.g_dark_zone_enable, 0x0C);
+	} else {
+		CLR_BIT(tcm_info->dc_cfg.g_dark_zone_enable, 0x0C);
+	}
+
+	return 0;
+}
+
+static int syna_long_dead_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	u16 dead_bit;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (tcm_info->touch_direction != VERTICAL_SCREEN) {
+		return 0;
+	}
+
+	TPD_INFO("%s:x width %d, y width %d.\n", __func__, grip_zone->x_width, grip_zone->y_width);
+
+	if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+		tcm_info->dc_cfg.g_abs_dark_x = grip_zone->x_width & 0x7F;
+	} else {
+		return 0;
+	}
+
+
+	if (grip_zone->x_width & 0x80) {
+		dead_bit = 0x303;
+	} else {
+		dead_bit = 0x03;
+	}
+
+	if (enable) {
+		SET_BIT(tcm_info->dc_cfg.g_abs_dark_sel, dead_bit);
+	} else {
+		CLR_BIT(tcm_info->dc_cfg.g_abs_dark_sel, dead_bit);
+	}
+	return 0;
+}
+
+static int syna_short_dead_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	u16 dead_bit;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (tcm_info->touch_direction == VERTICAL_SCREEN) {
+		return 0;
+	}
+
+	TPD_INFO("%s:x width %d, y width %d.\n", __func__, grip_zone->x_width, grip_zone->y_width);
+
+	if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+		tcm_info->dc_cfg.g_abs_dark_x = (grip_zone->y_width >> 8) & 0x7F;
+		tcm_info->dc_cfg.g_abs_dark_y = grip_zone->y_width & 0x7F;
+	} else {
+		return 0;
+	}
+	dead_bit = 0x0F;
+
+	if (grip_zone->y_width & 0x8000) {
+		dead_bit |= 0x300;
+	}
+	if (grip_zone->y_width & 0x80) {
+		dead_bit |= 0xC00;
+	}
+
+	if (enable) {
+		SET_BIT(tcm_info->dc_cfg.g_abs_dark_sel, dead_bit);
+	} else {
+		CLR_BIT(tcm_info->dc_cfg.g_abs_dark_sel, dead_bit);
+	}
+	return 0;
+}
+
+static int syna_long_condtion_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (tcm_info->touch_direction != VERTICAL_SCREEN) {
+		return 0;
+	}
+
+	TPD_INFO("%s:x width %d, y width %d.\n", __func__,
+		 grip_zone->x_width, grip_zone->y_width);
+
+	if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+		tcm_info->dc_cfg.g_condtion_zone = grip_zone->x_width;
+	} else {
+		return 0;
+	}
+
+	if (!enable) {
+		tcm_info->dc_cfg.g_condtion_zone = 1;
+	}
+
+	return 0;
+}
+
+static int syna_short_condtion_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (tcm_info->touch_direction == VERTICAL_SCREEN) {
+		return 0;
+	}
+
+	TPD_INFO("%s:x width %d, y width %d.\n", __func__,
+		 grip_zone->x_width, grip_zone->y_width);
+
+	if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+		tcm_info->dc_cfg.g_condtion_zone = grip_zone->y_width;
+	} else {
+		return 0;
+	}
+
+	if (!enable) {
+		tcm_info->dc_cfg.g_condtion_zone = 1;
+	}
+
+	return 0;
+}
+
+static int syna_long_large_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	u16 area;
+	u16 dead_bit;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (tcm_info->touch_direction != VERTICAL_SCREEN) {
+		return 0;
+	}
+
+	TPD_INFO("%s:x width %d, y width %d.\n", __func__,
+		 grip_zone->x_width, grip_zone->y_width);
+
+	if ((grip_zone->grip_side >> TYPE_LONG_SIDE) & 0x01) {
+		area = 4 * (grip_zone->x_width & 0x7F);
+		tcm_info->dc_cfg.g_abs_dark_u = area;
+		area = (grip_zone->x_width & 0x7F00) >> 6;
+		tcm_info->dc_cfg.g_abs_dark_v = area;
+	} else {
+		return 0;
+	}
+
+	dead_bit = 0x30;
+	if (grip_zone->x_width &0x8000) {
+		dead_bit = 0x3030;
+	}
+	if (enable) {
+		SET_BIT(tcm_info->dc_cfg.g_abs_dark_sel, dead_bit);
+	} else {
+		CLR_BIT(tcm_info->dc_cfg.g_abs_dark_sel, dead_bit);
+	}
+
+	return 0;
+}
+
+static int syna_short_large_zone_handle_func(void *chip_data,
+		struct grip_zone_area *grip_zone,
+		bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	u16 area;
+	u16 dead_bit;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (tcm_info->touch_direction == VERTICAL_SCREEN) {
+		return 0;
+	}
+
+	TPD_INFO("%s:x width %d, y width %d.\n", __func__,
+		 grip_zone->x_width, grip_zone->y_width);
+
+	if ((grip_zone->grip_side >> TYPE_SHORT_SIDE) & 0x01) {
+		area = 4 * (grip_zone->y_width & 0x7F);
+		tcm_info->dc_cfg.g_abs_dark_u = area;
+		area = (grip_zone->y_width & 0x7F00) >> 6;
+		tcm_info->dc_cfg.g_abs_dark_v = area;
+	} else {
+		return 0;
+	}
+
+	if (tcm_info->touch_direction == LANDSCAPE_SCREEN_90) {
+		dead_bit = 0x50;
+		if (grip_zone->y_width &0x8000) {
+			dead_bit = 0x5050;
+		}
+
+	} else {
+		dead_bit = 0xA0;
+		if (grip_zone->y_width &0x8000) {
+			dead_bit = 0xA0A0;
+		}
+	}
+
+	if (enable) {
+		SET_BIT(tcm_info->dc_cfg.g_abs_dark_sel, dead_bit);
+	} else {
+		CLR_BIT(tcm_info->dc_cfg.g_abs_dark_sel, dead_bit);
+	}
+
+	return 0;
+}
+
+static int syna_set_fw_grip_area(void *chip_data,
+				 struct grip_zone_area *grip_zone,
+				 bool enable)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	int ret = 0;
+	int i = 0;
+
+	if (!tcm_info || !grip_zone || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	for (i = 0 ; i < ARRAY_SIZE(syna_grip); i ++) {
+		if (0 != strncmp(grip_zone->name, syna_grip[i].name,
+				 GRIP_TAG_SIZE)) {
+			continue;
+		}
+
+		if (syna_grip[i].handle_func) {
+			syna_grip[i].handle_func(chip_data, grip_zone, enable);
+		}
+		break;
+	}
+
+	if (i == ARRAY_SIZE(syna_grip)) {
+		TPD_DETAIL("%s: %s is not support in fw.\n", __func__,
+			   grip_zone->name);
+		return 0;
+	} else {
+		ret = syna_send_grip_to_chip(chip_data);
+		TPD_INFO("%s: %s %s in fw : [%d, %d] [%d %d] %d %d %d.\n",
+			 __func__,
+			 grip_zone->name, enable ? "modify" : "remove",
+			 grip_zone->start_x, grip_zone->start_y,
+			 grip_zone->x_width, grip_zone->y_width,
+			 grip_zone->exit_thd, grip_zone->support_dir,
+			 grip_zone->grip_side);
+	}
+
+	return ret;
+}
+
+static int syna_set_no_handle_area(void *chip_data,
+				   struct kernel_grip_info *grip_info)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	int ret = 0;
+	uint16_t lcd_x = 1;
+	uint16_t len = 0;
+
+	if (!tcm_info || !grip_info || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	TPD_INFO("%s:area %d, y1 %d, y2 %d.\n", __func__,
+		 grip_info->no_handle_y1, grip_info->no_handle_y1,
+		 grip_info->no_handle_y2);
+
+	if (grip_info->no_handle_y2 < grip_info->no_handle_y1) {
+		len = 0;
+	} else {
+		len = grip_info->no_handle_y2 - grip_info->no_handle_y1;
+	}
+	tcm_info->dc_cfg.g_special_zone_l = len;
+
+	if (tcm_info->chip_resolution_info
+	    && tcm_info->chip_resolution_info->LCD_WIDTH > 1) {
+		lcd_x = tcm_info->chip_resolution_info->LCD_WIDTH - 1;
+	}
+
+	if (grip_info->no_handle_dir < 2) {
+		tcm_info->dc_cfg.g_special_zone_y = grip_info->no_handle_y1;
+		if (!grip_info->no_handle_dir) {
+			tcm_info->dc_cfg.g_special_zone_x = lcd_x;
+		} else {
+			tcm_info->dc_cfg.g_special_zone_x = 0;
+		}
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_SPECIAL_ZONE_X,
+					  tcm_info->dc_cfg.g_special_zone_x);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_SPECIAL_ZONE_X\n", __func__);
+		return ret;
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_SPECIAL_ZONE_Y,
+					  tcm_info->dc_cfg.g_special_zone_y);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_SPECIAL_ZONE_Y\n", __func__);
+		return ret;
+	}
+
+	if (tcm_info->touch_direction != VERTICAL_SCREEN) {
+		len = 0;
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_SPECIAL_ZONE_L,
+					  len);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_SPECIAL_ZONE_L\n", __func__);
+		return ret;
+	}
+
+
+	TPD_DETAIL("%s: No handle area is %s change in fw : [%d, %d, %d].\n",
+		   __func__, ret < 0 ? "failed" : "success",
+		   grip_info->no_handle_dir, grip_info->no_handle_y1,
+		   grip_info->no_handle_y2);
+
+	return ret;
+}
+
+static int syna_set_large_thd(void *chip_data, int large_thd)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	int ret = 0;
+	unsigned short value;
+
+	if (!tcm_info || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	TPD_INFO("%s:large_thd %d.\n", __func__, large_thd);
+
+	value = large_thd & 0xF0;
+	CLR_BIT(tcm_info->dc_cfg.g_grip_enabled, 0xF0);
+	SET_BIT(tcm_info->dc_cfg.g_grip_enabled, value);
+
+	value = (large_thd & 0x0F) << 8;
+	CLR_BIT(tcm_info->dc_cfg.g_dark_zone_enable, 0xF00);
+	SET_BIT(tcm_info->dc_cfg.g_dark_zone_enable, value);
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_ENABLED,
+					  tcm_info->dc_cfg.g_grip_enabled);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_ENABLED\n", __func__);
+		return ret;
+	}
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_DARK_ZONE_ENABLE,
+					  tcm_info->dc_cfg.g_dark_zone_enable);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_DARK_ZONE_ENABLE\n", __func__);
+		return ret;
+	}
+
+	return ret;
+}
+
+static int syna_set_large_corner_frame_limit(void *chip_data, int frame)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	int ret = 0;
+	unsigned short value = 0;
+
+	if (!tcm_info || *tcm_info->in_suspend) {
+		return -1;
+	}
+
+	if (frame > 255) {
+		frame = 255;
+	}
+
+	value = (frame << 8) & 0xFF00;
+
+	CLR_BIT(tcm_info->dc_cfg.g_roate_hori_level, 0xFF00);
+	SET_BIT(tcm_info->dc_cfg.g_roate_hori_level, value);
+
+	ret = syna_tcm_set_dynamic_config(tcm_info,
+					  DC_GRIP_ROATE_TO_HORIZONTAL_LEVEL,
+					  tcm_info->dc_cfg.g_roate_hori_level);
+	if (ret < 0) {
+		TPD_INFO("%s:failed to set DC_GRIP_ROATE_TO_HORIZONTAL_LEVEL\n",
+			 __func__);
+		return ret;
+	}
+
+	return ret;
+}
+
+
+static void syna_set_grip_touch_direction(void *chip_data, uint8_t dir)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+
+	if (!tcm_info) {
+		return;
+	}
+
+	tcm_info->touch_direction = dir;
+
+	TPD_INFO("%s:touch_direction %d.\n", __func__,
+		 tcm_info->touch_direction);
+
+	if (tcm_info->touch_direction) {
+		SET_BIT(tcm_info->dc_cfg.g_roate_hori_level, 0x01);
+	} else {
+		CLR_BIT(tcm_info->dc_cfg.g_roate_hori_level, 0x01);
+	}
+}
+
+static int syna_set_disable_level(void *chip_data, uint8_t level)
+{
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+	int ret = -1;
+	unsigned short temp;
+
+	if (!tcm_info) {
+		return -1;
+	}
+
+	if (*tcm_info->in_suspend) {
+		TPD_INFO("%s: set touch_direction in TP suspend !\n", __func__);
+		return 0;
+	}
+
+	TPD_INFO("%s:disable level %d.\n", __func__, level);
+
+	if (!(level & (1 << GRIP_DISABLE_LARGE))) {
+		SET_BIT(tcm_info->dc_cfg.g_grip_enabled, 0x01);
+		temp = tcm_info->dc_cfg.g_grip_enabled;
+		ret = syna_tcm_set_dynamic_config(tcm_info,
+						  DC_GRIP_ENABLED,
+						  temp);
+		if (ret < 0) {
+			TPD_INFO("%s:failed to enable grip suppression\n",
+				 __func__);
+			return ret;
+		}
+	} else {
+		CLR_BIT(tcm_info->dc_cfg.g_grip_enabled, 0x01);
+		ret = syna_tcm_set_dynamic_config(tcm_info, DC_GRIP_ENABLED, 0);
+		if (ret < 0) {
+			TPD_INFO("%s:failed to disable grip suppression\n",
+				 __func__);
+			return ret;
+		}
+	}
+
+
+	return ret;
+}
+/*********** end of kernel grip callbacks*************************/
+
+static void syna_enable_kernel_grip(void *chip_data,
+				    struct kernel_grip_info *grip_info)
+{
+	struct list_head *pos = NULL;
+	struct grip_zone_area *grip_zone = NULL;
+	int i = 0;
+	struct syna_tcm_data *tcm_info = (struct syna_tcm_data *)chip_data;
+
+	if (!tcm_info || !grip_info || !grip_info->grip_handle_in_fw) {
+		return;
+	}
+	tcm_info->chip_grip_en = true;
+
+	syna_set_grip_touch_direction(chip_data, grip_info->touch_dir);
+
+	syna_set_grip_area_disable(chip_data);
+
+	list_for_each(pos, &grip_info->large_zone_list) {
+		grip_zone = (struct grip_zone_area *)pos;
+		for (i = 0 ; i < ARRAY_SIZE(syna_grip); i ++) {
+			if (0 != strncmp(grip_zone->name, syna_grip[i].name,
+					 GRIP_TAG_SIZE)) {
+				continue;
+			}
+
+			if (syna_grip[i].handle_func) {
+				syna_grip[i].handle_func(chip_data, grip_zone,
+							 true);
+			}
+		}
+	}
+
+	list_for_each(pos, &grip_info->dead_zone_list) {
+		grip_zone = (struct grip_zone_area *)pos;
+		for (i = 0 ; i < ARRAY_SIZE(syna_grip); i ++) {
+			if (0 != strncmp(grip_zone->name, syna_grip[i].name,
+					 GRIP_TAG_SIZE)) {
+				continue;
+			}
+
+			if (syna_grip[i].handle_func) {
+				syna_grip[i].handle_func(chip_data, grip_zone,
+							 true);
+			}
+		}
+	}
+
+	list_for_each(pos, &grip_info->condition_zone_list) {
+		grip_zone = (struct grip_zone_area *)pos;
+		for (i = 0 ; i < ARRAY_SIZE(syna_grip); i ++) {
+			if (0 != strncmp(grip_zone->name, syna_grip[i].name,
+					 GRIP_TAG_SIZE)) {
+				continue;
+			}
+
+			if (syna_grip[i].handle_func) {
+				syna_grip[i].handle_func(chip_data, grip_zone,
+							 true);
+			}
+		}
+	}
+
+
+	syna_set_no_handle_area(chip_data, grip_info);
+	syna_set_large_corner_frame_limit(chip_data,
+					  grip_info->large_corner_frame_limit);
+	if (tcm_info->touch_direction == VERTICAL_SCREEN) {
+		syna_set_large_thd(chip_data, grip_info->large_ver_thd);
+	} else {
+		syna_set_large_thd(chip_data, grip_info->large_hor_thd);
+	}
+	syna_send_grip_to_chip(chip_data);
+	syna_set_disable_level(chip_data, grip_info->grip_disable_level);
+}
 
 static int syna_tcm_send_temperature(void *chip_data, int temp, bool status)
 {
@@ -6939,11 +7896,13 @@ static struct oplus_touchpanel_operations syna_tcm_ops = {
 	.specific_resume_operate	= syna_specific_resume_operate,
 	.smooth_lv_set			= syna_tcm_smooth_lv_set,
 	.sensitive_lv_set		= syna_tcm_sensitive_lv_set,
+	.diaphragm_touch_lv_set		= syna_tcm_diaphragm_touch_lv_set,
 	.get_touch_points_auto		= syna_get_touch_points_auto,
 	.get_gesture_info_auto		= syna_get_gesture_info_auto,
 	.screenon_fingerprint_info_auto	= syna_tcm_fingerprint_info_auto,
 	.tp_refresh_switch		= syna_report_refresh_switch,
 	.rate_white_list_ctrl		= syna_rate_white_list_ctrl,
+	.enable_kernel_grip		= syna_enable_kernel_grip,
 	.set_gesture_state         	= syna_set_gesture_state,
 	.get_touch_points_help		= syna_get_touch_points_help,
 	.set_high_frame_rate            = syna_tcm_set_high_frame_rate,
@@ -7260,7 +8219,12 @@ static int syna_tcm_probe(struct spi_device *spi)
 	tcm_info->black_gesture_indep = ts->black_gesture_indep_support;
 	tcm_info->differ_read_every_frame = false;
 
-
+	/* 10. kernel grip interface init*/
+	if (ts->grip_info) {
+		if (ts->grip_info->grip_handle_in_fw) {
+			ts->grip_info->fw_ops = &syna_fw_grip_op;
+		}
+	}
 	tcm_info->chip_resolution_info = &ts->resolution_info;
 
 	/*11. create synaptics common file*/

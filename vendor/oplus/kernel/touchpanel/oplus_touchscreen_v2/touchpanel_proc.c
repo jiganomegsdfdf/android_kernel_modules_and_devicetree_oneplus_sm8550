@@ -18,6 +18,7 @@
 #include <linux/regulator/consumer.h>
 
 #include "touchpanel_common.h"
+#include "touchpanel_prevention/touchpanel_prevention.h"
 #include "touchpanel_autotest/touchpanel_autotest.h"
 #include "touch_comon_api/touch_comon_api.h"
 #include "touchpanel_tui_support/touchpanel_tui_support.h"
@@ -141,6 +142,113 @@ static ssize_t proc_optimized_time_read(struct file *file,
 
 DECLARE_PROC_OPS(proc_optimized_time_fops, simple_open, proc_optimized_time_read, proc_optimized_time_write, NULL);
 
+/*/proc/touchpanel/kernel_grip_default_para*/
+static int tp_grip_default_para_read(struct seq_file *s, void *v)
+{
+	int ret = 0;
+	int is_default_xml_exit = 0;
+	struct touchpanel_data *ts = s->private;
+	const struct firmware *fw = NULL;
+
+	char *p_node_img = NULL;
+	char *p_node_default_xml = NULL;
+	char *grip_config_name_img = NULL;
+	char *grip_config_name_default_xml = NULL;
+	char *postfix_img = "_sys_edge_touch_config.img";
+	char *postfix_default_xml = "/sys_edge_touch_config.xml";
+	uint8_t copy_len = 0;
+
+	TPD_INFO("%s:s->size:%lu,s->count:%lu\n", __func__, s->size,
+		 s->count);
+
+	if (!ts) {
+		return 0;
+	}
+
+	if (s->size <= (PAGE_SIZE * 4)) {
+		s->count = s->size;
+		return 0;
+	}
+
+	grip_config_name_img = kzalloc(MAX_FW_NAME_LENGTH, GFP_KERNEL);
+	if (grip_config_name_img == NULL) {
+		TPD_INFO("grip_config_name_img kzalloc error!\n");
+		return 0;
+	}
+	p_node_img = strstr(ts->panel_data.fw_name, ".");
+	if (p_node_img == NULL) {
+		TPD_INFO("p_node_img strstr error!\n");
+		kfree(grip_config_name_img);
+		return 0;
+	}
+
+	grip_config_name_default_xml = kzalloc(MAX_FW_NAME_LENGTH, GFP_KERNEL);
+	if (grip_config_name_default_xml == NULL) {
+		TPD_INFO("grip_config_name_default_xml kzalloc error!\n");
+		return 0;
+	}
+	p_node_default_xml = strstr(strstr(ts->panel_data.fw_name, "/") + 1, "/");
+	if (p_node_default_xml == NULL) {
+		TPD_INFO("p_node_default_xml strstr error!\n");
+		kfree(grip_config_name_default_xml);
+		return 0;
+	}
+
+	copy_len = p_node_img - ts->panel_data.fw_name;
+	memcpy(grip_config_name_img, ts->panel_data.fw_name, copy_len);
+	strlcat(grip_config_name_img, postfix_img, MAX_FW_NAME_LENGTH);
+
+	TPD_INFO("grip_config_name_img is %s\n", grip_config_name_img);
+
+	copy_len = p_node_default_xml - ts->panel_data.fw_name;
+	memcpy(grip_config_name_default_xml, ts->panel_data.fw_name, copy_len);
+	strlcat(grip_config_name_default_xml, postfix_default_xml, MAX_FW_NAME_LENGTH);
+
+	TPD_INFO("grip_config_name_default_xml is %s\n", grip_config_name_default_xml);
+
+	ret = request_firmware(&fw, grip_config_name_default_xml, ts->dev);
+	if (ret < 0) {
+		TPD_INFO("Request firmware failed - %s (%d)\n", grip_config_name_default_xml, ret);
+	} else {
+		TPD_INFO("%s Request ok,size is:%lu\n", grip_config_name_default_xml, fw->size);
+	}
+
+
+	is_default_xml_exit = ret;
+	if (is_default_xml_exit < 0) {
+		ret = request_firmware(&fw, grip_config_name_img, ts->dev);
+		if (ret < 0) {
+			TPD_INFO("Request firmware failed - %s (%d)\n", grip_config_name_img, ret);
+			seq_printf(s, "Request failed, Check the path %s\n", grip_config_name_img);
+			seq_printf(s, "Request failed, Check the path %s\n", grip_config_name_default_xml);
+			kfree(grip_config_name_img);
+			kfree(grip_config_name_default_xml);
+			return 0;
+		}
+
+		TPD_INFO("%s Request ok,size is:%lu\n", grip_config_name_img, fw->size);
+	}
+
+
+	if (fw->size > 0) {
+		seq_write(s, fw->data, fw->size);
+		TPD_INFO("%s:seq_write data ok\n", __func__);
+	}
+
+	release_firmware(fw);
+	kfree(grip_config_name_img);
+	kfree(grip_config_name_default_xml);
+	return ret;
+}
+
+static int tp_grip_default_para_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, tp_grip_default_para_read, PDE_DATA(inode));
+}
+
+DECLARE_PROC_OPS(tp_grip_default_para_fops, tp_grip_default_para_open, seq_read, NULL, single_release);
+
+
 /*tp_index - For read current tp index
  * Output:
  * tp_index: current pointer tp touchpanel_data;
@@ -225,7 +333,7 @@ static ssize_t proc_palm_to_sleep_read(struct file *file, char __user *buffer,
 		goto OUT;
 	}
 
-	snprintf(buf, PALM_BUF_SIZE - 1, "%d\n", ts->palm_to_sleep_enable);
+	snprintf(buf, PALM_BUF_SIZE - 1, "%d", ts->palm_to_sleep_enable);
 	ret = simple_read_from_buffer(buffer, count, ppos, buf, strlen(buf));
 	TPD_DETAIL("%s: get palm_to_sleep\n", __func__);
 
@@ -1940,6 +2048,61 @@ static ssize_t proc_sensitive_level_read(struct file *file, char __user *user_bu
 
 DECLARE_PROC_OPS(proc_sensitive_level_fops, simple_open, proc_sensitive_level_read, proc_sensitive_level_write, NULL);
 
+static ssize_t proc_diaphragm_touch_level_write(struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
+{
+	int value = 0;
+	char buf[6] = {0};
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	if (!ts) {
+		TPD_INFO("%s: ts is NULL\n", __func__);
+		return count;
+	}
+	touchpanel_trusted_touch_completion(ts);
+
+	if (!ts->ts_ops->diaphragm_touch_lv_set) {
+		TPD_INFO("%s:not support ts_ops->diaphragm_touch_lv_set callback\n", __func__);
+		return count;
+	}
+
+	tp_copy_from_user(buf, sizeof(buf), buffer, count, 5);
+
+	if (kstrtoint(buf, 10, &value)) {
+		TP_INFO(ts->tp_index, "%s: kstrtoint error\n", __func__);
+		return count;
+	}
+
+	mutex_lock(&ts->mutex);
+	ts->diaphragm_touch_level_chosen = value;
+
+	TPD_INFO("%s: level=%d\n", __func__, ts->diaphragm_touch_level_chosen);
+	if (!ts->is_suspended) {
+		ts->ts_ops->diaphragm_touch_lv_set(ts->chip_data, value);
+	} else {
+		TPD_INFO("%s: TP is_suspended.\n", __func__);
+	}
+	mutex_unlock(&ts->mutex);
+
+	return count;
+}
+
+static ssize_t proc_diaphragm_touch_level_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos)
+{
+	int ret = 0;
+	char page[PAGESIZE] = {0};
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	if (!ts || !ts->diaphragm_touch_support) {
+		snprintf(page, PAGESIZE - 1, "%d\n", -1);
+	} else {
+		snprintf(page, PAGESIZE - 1, "%u\n", ts->diaphragm_touch_level_chosen);
+	}
+	ret = simple_read_from_buffer(user_buf, count, ppos, page, strlen(page));
+	return ret;
+}
+
+DECLARE_PROC_OPS(proc_diaphragm_touch_level_fops, simple_open, proc_diaphragm_touch_level_read, proc_diaphragm_touch_level_write, NULL);
+
 static int calibrate_fops_read_func(struct seq_file *s, void *v)
 {
 	struct touchpanel_data *ts = s->private;
@@ -3029,6 +3192,10 @@ static int tp_main_register_read_func(struct seq_file *s, void *v)
 	seq_printf(s, "touch_count:%d\n", ts->touch_count);
 	debug_info_ops->main_register_read(s, ts->chip_data);
 
+	if (ts->kernel_grip_support) {
+		seq_printf(s, "kernel_grip_info:\n");
+		kernel_grip_print_func(s, ts->grip_info);
+	}
 #ifndef CONFIG_REMOVE_OPLUS_FUNCTION
 	if (ts->health_monitor_support && tp_debug == 2) {
 		if (monitor_data->fw_version) {
@@ -3814,6 +3981,10 @@ int init_touchpanel_proc_part2(struct touchpanel_data *ts, struct proc_dir_entry
 			ts->sensitive_level_array_support
 		},
 		{
+			"diaphragm_touch", 0666, NULL, &proc_diaphragm_touch_level_fops, ts, false,
+			ts->diaphragm_touch_support
+		},
+		{
 			"double_tap_enable_indep", 0666, NULL, &proc_gesture_control_indep_fops, ts, false,
 			ts->black_gesture_indep_support
 		},
@@ -3857,6 +4028,7 @@ int init_touchpanel_proc(struct touchpanel_data *ts)
 	int ret = 0;
 	int i = 0;
 	struct proc_dir_entry *prEntry_tp = NULL;
+	struct proc_dir_entry *prEntry_tmp = NULL;
 	char name[TP_NAME_SIZE_MAX];
 
 	tp_proc_node tp_proc_node[] = {
@@ -4010,6 +4182,19 @@ int init_touchpanel_proc(struct touchpanel_data *ts)
 	init_touchpanel_proc_part2(ts, prEntry_tp);
 	/*create debug_info node*/
 	init_debug_info_proc(ts);
+
+	/*create kernel grip proc file*/
+	if (ts->kernel_grip_support) {
+		init_kernel_grip_proc(ts->prEntry_tp, ts->grip_info);
+		prEntry_tmp = proc_create_data("kernel_grip_default_para",
+					       0664,
+					       prEntry_tp,
+					       &tp_grip_default_para_fops,
+					       ts);
+		if (prEntry_tmp == NULL) {
+			TPD_INFO("%s: Couldn't create proc entry, %d\n", __func__, __LINE__);
+		}
+	}
 
 	return ret;
 }

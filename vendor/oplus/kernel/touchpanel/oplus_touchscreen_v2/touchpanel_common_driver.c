@@ -28,6 +28,7 @@
 #include "touchpanel_common.h"
 #include "touchpanel_proc.h"
 #include "touch_comon_api/touch_comon_api.h"
+#include "touchpanel_prevention/touchpanel_prevention.h"
 #include "touchpanel_healthinfo/touchpanel_healthinfo.h"
 #include "touchpanel_healthinfo/touchpanel_exception.h"
 #include "touchpanel_tui_support/touchpanel_tui_support.h"
@@ -314,6 +315,10 @@ void operate_mode_switch(struct touchpanel_data *ts)
 			mode_switch_health(ts, MODE_HEADSET, ts->is_headset_checked);
 		}
 
+		if (ts->kernel_grip_support && ts->ts_ops->enable_kernel_grip) {
+			ts->ts_ops->enable_kernel_grip(ts->chip_data, ts->grip_info);
+		}
+
 		if (ts->smooth_level_array_support && ts->ts_ops->smooth_lv_set) {
 			ts->ts_ops->smooth_lv_set(ts->chip_data, ts->smooth_level_used_array[ts->smooth_level_chosen]);
 		}
@@ -321,7 +326,9 @@ void operate_mode_switch(struct touchpanel_data *ts)
 		if (ts->sensitive_level_array_support && ts->ts_ops->sensitive_lv_set) {
 			ts->ts_ops->sensitive_lv_set(ts->chip_data, ts->sensitive_level_used_array[ts->sensitive_level_chosen]);
 		}
-
+		if (ts->diaphragm_touch_support && ts->ts_ops->diaphragm_touch_lv_set) {
+			ts->ts_ops->diaphragm_touch_lv_set(ts->chip_data, ts->diaphragm_touch_level_chosen);
+		}
 		if (ts->lcd_tp_refresh_support && ts->ts_ops->tp_refresh_switch) {
 			ts->ts_ops->tp_refresh_switch(ts->chip_data, ts->lcd_fps);
 		}
@@ -482,7 +489,7 @@ static inline void tp_touch_down(struct touchpanel_data *ts, struct point_info p
 	}
 
 	if (!CHK_BIT(ts->irq_slot, (1 << id))) {
-		TP_DETAIL(ts->tp_index, "first touch point id %d [%4d %4d %4d %4d %4d %4d %4d]\n", id, points.x, points.y, points.z,
+		TP_INFO(ts->tp_index, "first touch point id %d [%4d %4d %4d %4d %4d %4d %4d]\n", id, points.x, points.y, points.z,
 					points.rx_press, points.tx_press, points.rx_er, points.tx_er);
 		if(id == 0 && tp_debug == 1 && ts->monitor_data.RATE_MIN) {
 			tp_rate_calc(ts, TP_RATE_CLEAR);
@@ -513,6 +520,7 @@ static inline void tp_touch_up(struct touchpanel_data *ts)
 
 	input_report_key(ts->input_dev, BTN_TOUCH, 0);
 	input_report_key(ts->input_dev, BTN_TOOL_FINGER, 0);
+	ts->pen_mode_tp_state = DEFAULT;				/*need reset tp state, IC may report times palm, but common driver just report and clear once */
 }
 
 void notify_pen_state(int state, unsigned int index)
@@ -858,6 +866,12 @@ static inline void tp_touch_handle(struct touchpanel_data *ts)
 		ts->monitor_data.touch_points = points;
 		tp_healthinfo_report(&ts->monitor_data, HEALTH_RAW_TOUCH, &obj_attention);
 	}
+	if (ts->kernel_grip_support && (!ts->grip_no_driver_support)) {
+		obj_attention = notify_prevention_handle(ts->grip_info, obj_attention, points);
+		if (ts->health_monitor_support) {
+			tp_healthinfo_report(&ts->monitor_data, HEALTH_GRIP, ts->grip_info);
+		}
+	}
 
 	if (ts->major_rate_limit_support && !!(ts->noise_level)) {
 		ts->tp_ic_touch_num = 0;
@@ -916,6 +930,13 @@ static inline void tp_touch_handle(struct touchpanel_data *ts)
 			}
 			else {
 				input_mt_slot(ts->input_dev, i);
+
+				if (ts->kernel_grip_support && ts->grip_info
+				    && ts->grip_info->eli_reject_status[i]
+				    && !(ts->grip_info->grip_disable_level & (1 << GRIP_DISABLE_UP2CANCEL))) {
+					input_report_abs(ts->input_dev, ABS_MT_PRESSURE, UP2CANCEL_PRESSURE_VALUE);
+				}
+
 				input_mt_report_slot_state(ts->input_dev, MT_TOOL_FINGER, 0);
 			}
 		}
@@ -969,6 +990,14 @@ static inline void tp_touch_handle(struct touchpanel_data *ts)
 	input_sync(ts->input_dev);
 	ts->touch_count = (finger_num << 4) | (finger_num_center & 0x0F);
 	mutex_unlock(&ts->report_mutex);
+
+	if (ts->health_monitor_support) {
+		ts->monitor_data.touch_points = points;
+		ts->monitor_data.touch_num = finger_num;
+		ts->monitor_data.direction = ts->grip_info ? ts->grip_info->touch_dir :
+					     ts->limit_enable;
+		tp_healthinfo_report(&ts->monitor_data, HEALTH_TOUCH, &obj_attention);
+	}
 }
 
 /**
@@ -2163,6 +2192,8 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	ts->skip_reinit_device_support = of_property_read_bool(np, "skip_reinit_device_support");
 	ts->suspend_work_support = of_property_read_bool(np, "suspend_work_support");
 	ts->fp_disable_after_resume = of_property_read_bool(np, "fp_disable_after_resume");
+	ts->edge_pull_out_support = of_property_read_bool(np, "edge_pull_out_support");
+	ts->diaphragm_touch_support = of_property_read_bool(np, "diaphragm_touch_support");
 
 #ifdef CONFIG_TOUCHPANEL_TRUSTED_TOUCH
 	ts->trusted_touch_support = of_property_read_bool(np, "trusted_touch_support");
@@ -3551,6 +3582,11 @@ static void tp_get_temperature_work(struct work_struct *work)
 	if (ts->old_temp == result)
 		goto End;
 
+	if (result > MAX_TEMPERATURE || result < MIN_TEMPERATURE) {
+		ts->monitor_data.abnormal_temperature_count++;
+		goto End;
+	}
+
 	if (ts->is_suspended == 0 && (ts->temperature_detect_support || ts->temperature_detect_shellback_support)) {
 		mutex_lock(&ts->mutex);
 		ts->ts_ops->send_temperature(ts->chip_data, result, true);
@@ -3630,6 +3666,8 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 {
 	struct touchpanel_data *ts = pdata;
 	char name[TP_NAME_SIZE_MAX];
+	struct device_node *chip_np = NULL;
+	struct device_node *src_chip_np = NULL;
 	int ret = -1;
 	int i = 0;
 #if IS_ENABLED(CONFIG_QCOM_PANEL_EVENT_NOTIFIER)
@@ -3993,6 +4031,23 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 		ts->freq_hop_info.freq_hop_freq = 0;
 	}
 
+	/*initial kernel grip parameter*/
+	if (ts->kernel_grip_support) {
+		chip_np = is_support_child_node(ts->dev, ts);
+
+		if (!chip_np) {
+			TP_INFO(ts->tp_index, "chip_np not defined.\n");
+			ts->grip_info = kernel_grip_init(ts->dev);
+		} else {
+			src_chip_np = ts->dev->of_node;
+			ts->dev->of_node = chip_np;
+			ts->grip_info = kernel_grip_init(ts->dev);
+			if (!ts->grip_info) {
+				TP_BOOT_INFO(ts->tp_index, "kernel grip init node failed.\n");
+			}
+			ts->dev->of_node = src_chip_np;
+		}
+	}
 
 	if (ts->pen_support) {	/* Default to enable pen function when boot up */
 			ts->is_pen_connected = 1;
@@ -4386,7 +4441,7 @@ static void tp_suspend_direct(struct touchpanel_data *ts)
 		TP_INFO(ts->tp_index, "%s: do not suspend twice.\n", __func__);
 		goto EXIT;
 	}
-	if ((ts->temperature_detect_support || ts->temperature_detect_shellback_support) && ts->skin_therm_chan)
+	if ((ts->temperature_detect_support && ts->skin_therm_chan) || ts->temperature_detect_shellback_support)
 		hrtimer_cancel(&ts->temp_timer);
 
 	/*step3:Release key && touch event before suspend*/
@@ -4460,6 +4515,9 @@ EXIT:
 
 	if (ts->health_monitor_support) {
 		tp_healthinfo_report(&ts->monitor_data, HEALTH_SUSPEND, &start_time);
+		if (false == ts->bus_ready) {
+			ts->monitor_data.bus_not_ready_tp_suspend_count++;
+		}
 	}
 
 	if (ts->en_touch_event_helper) {
@@ -4502,7 +4560,8 @@ static void tp_suspend_work(struct work_struct *work)
 static void tp_resume(struct device *dev)
 {
 	struct touchpanel_data *ts = dev_get_drvdata(dev);
-
+	struct device_node *chip_np = NULL;
+	struct device_node *src_chip_np = NULL;
 	TP_INFO(ts->tp_index, "%s start.\n", __func__);
 
 	if (!ts->is_suspended) {
@@ -4536,6 +4595,25 @@ static void tp_resume(struct device *dev)
 			if (ts->ts_ops->reinit_device) {
 				ts->ts_ops->reinit_device(ts->chip_data);
 			}
+		}
+	}
+
+	if (ts->kernel_grip_support) {
+		if (ts->grip_info) {
+			kernel_grip_reset(ts->grip_info);
+
+		} else {
+			chip_np = is_support_child_node(ts->dev, ts);
+			if (!chip_np) {
+				TP_INFO(ts->tp_index, "chip_np not defined.\n");
+				ts->grip_info = kernel_grip_init(ts->dev);
+			} else {
+				src_chip_np = ts->dev->of_node;
+				ts->dev->of_node = chip_np;
+				ts->grip_info = kernel_grip_init(ts->dev);
+				ts->dev->of_node = src_chip_np;
+			}
+			init_kernel_grip_proc(ts->prEntry_tp, ts->grip_info);
 		}
 	}
 
@@ -4633,7 +4711,7 @@ static void speedup_resume(struct work_struct *work)
 
 EXIT:
 	ts->suspend_state = TP_SPEEDUP_RESUME_COMPLETE;
-	if ((ts->temperature_detect_support || ts->temperature_detect_shellback_support) && ts->skin_therm_chan)
+	if ((ts->temperature_detect_support && ts->skin_therm_chan) || ts->temperature_detect_shellback_support)
 		hrtimer_start(&ts->temp_timer, ktime_set(15, 0), HRTIMER_MODE_REL);
 
 	if (ts->health_monitor_support) {
@@ -4657,6 +4735,10 @@ static void lcd_off_early_event(struct touchpanel_data *ts)
 {
 	ts->suspend_state = TP_SUSPEND_EARLY_EVENT;      /*set suspend_resume_state*/
 
+	if (ts->health_monitor_support && (false == ts->bus_ready)) {
+		ts->monitor_data.bus_not_ready_off_early_event_count++;
+	}
+
 	if (ts->esd_handle_support && ts->is_incell_panel
 	    && (ts->tp_suspend_order == LCD_TP_SUSPEND)) {
 		esd_handle_switch(&ts->esd_info, false);
@@ -4675,6 +4757,10 @@ static void lcd_off_early_event(struct touchpanel_data *ts)
 
 static void lcd_off_event(struct touchpanel_data *ts)
 {
+	if (ts->health_monitor_support && (false == ts->bus_ready)) {
+		ts->monitor_data.bus_not_ready_off_event_count++;
+	}
+
 	if (ts->tp_suspend_order == TP_LCD_SUSPEND) {
 	} else if (ts->tp_suspend_order == LCD_TP_SUSPEND) {
 		tp_suspend(ts->dev);
@@ -4752,9 +4838,14 @@ static void ts_panel_notifier_callback(enum panel_event_notifier_tag tag,
 			notification->notif_data.early_trigger);
 	}
 
-	if (ts->bus_ready == false && ts->bus_ready_check_support == true) {
-		TP_INFO(ts->tp_index, "bus_ready not ready, tp exit\n");
-		return;
+	if (ts->bus_ready == false) {
+		if (ts->health_monitor_support) {
+			ts->monitor_data.bus_not_ready_notify_count++;
+		}
+		if (ts->bus_ready_check_support == true) {
+			TP_INFO(ts->tp_index, "bus_ready not ready, tp exit\n");
+			return;
+		}
 	}
 
 	switch (notification->notif_type) {
