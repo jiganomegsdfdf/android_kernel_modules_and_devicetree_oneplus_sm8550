@@ -2224,21 +2224,13 @@ static void ft3658u_auto_write_result(struct chip_data_ft3658u *ts_data, int fai
 	ksys_write(ts_data->csv_fd, data_buf, buflen);
 
 	line_num += 2;
-	buflen = snprintf(data_buf, 256, "%s, %d, %d, %d, %d, %d, ", "SCAP CB Test", 9,
-			  2, 1, line_num, 2);
-	ksys_write(ts_data->csv_fd, data_buf, buflen);
 
-	line_num += 2;
 	buflen = snprintf(data_buf, 256, "%s, %d, %d, %d, %d, %d, ", "SCAP CB Test", 9,
 			  2, rx_num, line_num, 3);
 	ksys_write(ts_data->csv_fd, data_buf, buflen);
 
 	line_num += 2;
-	buflen = snprintf(data_buf, 256, "%s, %d, %d, %d, %d, %d, ", "SCAP CB Test", 9,
-			  2, 1, line_num, 4);
-	ksys_write(ts_data->csv_fd, data_buf, buflen);
 
-	line_num += 2;
 	buflen = snprintf(data_buf, 256, "%s, %d, %d, %d, %d, %d, ",
 			  "SCAP Rawdata Test", 10, 2, rx_num, line_num, 1);
 	ksys_write(ts_data->csv_fd, data_buf, buflen);

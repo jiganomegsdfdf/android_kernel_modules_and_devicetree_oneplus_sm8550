@@ -3089,7 +3089,7 @@
 	oplus,adfr-test-te-gpio = <&tlmm 87 0>;
 
 	/* ofp config */
-	oplus,ofp-fp-type = <0x88>;
+	oplus,ofp-fp-type = <0x188>;
 	oplus,ofp-need-to-bypass-gamut;
 	oplus,ofp-need-to-wait-data-before-aod-on;
 };

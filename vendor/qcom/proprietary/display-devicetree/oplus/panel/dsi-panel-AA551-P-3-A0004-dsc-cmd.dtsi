@@ -5864,9 +5864,9 @@
 				qcom,mdss-dsi-recovery-scanline-command-state = "dsi_hs_mode";
 
 				qcom,mdss-dsi-qsync-off-commands-state ="dsi_hs_pack_mode";
-				qcom,mdss-dsi-adfr-min-fps-0-command-state = "dsi_hs_mode";
-				qcom,mdss-dsi-adfr-min-fps-1-command-state = "dsi_hs_mode";
-				qcom,mdss-dsi-adfr-min-fps-2-command-state = "dsi_hs_mode";
+				qcom,mdss-dsi-adfr-min-fps-0-command-state = "dsi_hs_pack_mode";
+				qcom,mdss-dsi-adfr-min-fps-1-command-state = "dsi_hs_pack_mode";
+				qcom,mdss-dsi-adfr-min-fps-2-command-state = "dsi_hs_pack_mode";
 				qcom,mdss-dsi-hpwm-adfr-min-fps-0-command-state = "dsi_hs_mode";
 				qcom,mdss-dsi-hpwm-adfr-min-fps-1-command-state = "dsi_hs_mode";
 				qcom,mdss-dsi-hpwm-adfr-min-fps-2-command-state = "dsi_hs_mode";

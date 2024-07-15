@@ -83,8 +83,8 @@
 	qcom,vmax-mv = <1280>;
 	qcom,cl-vmax-mv = <1280>;
 	qcom,lra-period-us = <5882>;
-	qcom,fifo-vmax-mv = <8000>;
-	qcom,old-steady-vmax-mv = <8000>;
+	qcom,fifo-vmax-mv = <7800>;
+	qcom,old-steady-vmax-mv = <7800>;
 	qcom,cal-data-restore;
 	qcom,vibrator-type = <809>;//ela0809
 	qcom,drv-duty = <4>;//75%

@@ -132,6 +132,7 @@
 					OPLUS_IC_FUNC_GAUGE_GET_QMAX_PASSED_Q
 					OPLUS_IC_FUNC_GAUGE_GET_REG_INFO
 					OPLUS_IC_FUNC_GAUGE_GET_CALIB_TIME
+					OPLUS_IC_FUNC_GAUGE_GET_BATT_SN
 				>;
 				virqs = <
 					OPLUS_IC_VIRQ_ERR
@@ -298,6 +299,14 @@
 						CURR_LIMIT_7BIT_3_0A CURR_LIMIT_7BIT_3_0A
 						CURR_LIMIT_7BIT_2_0A CURR_LIMIT_7BIT_2_0A>;
 
+		oplus,abnormal_over_80w_adapter_current = <CURR_LIMIT_7BIT_9_5A CURR_LIMIT_7BIT_9_5A
+						CURR_LIMIT_7BIT_7_0A CURR_LIMIT_7BIT_7_0A
+						CURR_LIMIT_7BIT_6_0A CURR_LIMIT_7BIT_6_0A
+						CURR_LIMIT_7BIT_5_0A CURR_LIMIT_7BIT_5_0A
+						CURR_LIMIT_7BIT_4_0A CURR_LIMIT_7BIT_4_0A
+						CURR_LIMIT_7BIT_3_0A CURR_LIMIT_7BIT_3_0A
+						CURR_LIMIT_7BIT_2_0A CURR_LIMIT_7BIT_2_0A>;
+
 		oplus,general_strategy_name = "cgcl";
 		oplus,general_strategy_data = < OPLUS_STRATEGY_USE_SHELL_TEMP
 						0   380 CURR_LIMIT_7BIT_9_5A 1 0
@@ -305,7 +314,6 @@
 						390 420 CURR_LIMIT_7BIT_5_0A 3 1
 						410 430 CURR_LIMIT_7BIT_4_0A 4 2
 						420 440 CURR_LIMIT_7BIT_3_0A 4 3 >;
-
 
 		oplus_virtual_vphy: oplus,virtual_vphy {
 			compatible = "oplus,virtual_vphy";

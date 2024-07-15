@@ -2089,6 +2089,7 @@ static int nvt_get_touch_points_high_reso(void *chip_data, struct point_info *po
 	uint32_t input_p = 0;
 	uint8_t pointid = 0;
 	uint8_t *point_data = chip_info->point_data;
+	bool is_finger_hold = false;
 	/*uint32_t tmp_data = 0;
 	struct resolution_info *res_info = &chip_info->ts->resolution_info;*/
 
@@ -2145,7 +2146,13 @@ static int nvt_get_touch_points_high_reso(void *chip_data, struct point_info *po
 			points[pointid].width_major = input_w;
 			points[pointid].touch_major = input_w;
 			points[pointid].status = 1;
+		} else if ((point_data[position] & 0x07) == STATUS_FINGER_HOLD) {
+			is_finger_hold = true;
 		}
+	}
+	/*no valid point and finger hold state, we should report cancel */
+	if ((0 == obj_attention) && is_finger_hold && chip_info->ts) {
+		chip_info->ts->pen_mode_tp_state = CANCLE_TP;
 	}
 
 #ifdef CONFIG_OPLUS_TP_APK

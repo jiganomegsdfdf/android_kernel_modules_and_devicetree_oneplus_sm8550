@@ -287,6 +287,10 @@ void operate_mode_switch(struct touchpanel_data *ts)
 	        }
 	    }
 
+		if (ts->diaphragm_touch_support && ts->ts_ops->diaphragm_touch_lv_set) {
+			ts->ts_ops->diaphragm_touch_lv_set(ts->chip_data, ts->diaphragm_touch_level_chosen);
+		}
+
         if (ts->lcd_tp_refresh_support && ts->ts_ops->tp_refresh_switch) {
             ts->ts_ops->tp_refresh_switch(ts->chip_data, ts->lcd_fps);
         }
@@ -917,7 +921,7 @@ static void tp_palm_to_sleep_inScreenLock(struct touchpanel_data *ts)
 
 	if (palm_report) {
 		snprintf(palm_report, 30, "palm_to_sleep_in_screenLock");
-		tp_healthinfo_report(&ts->monitor_data, HEALTH_REPORT, palm_report);
+		tp_healthinfo_report(&ts->monitor_data_v2, HEALTH_REPORT, palm_report);
 		kfree(palm_report);
 		palm_report = NULL;
 	}
@@ -2349,7 +2353,7 @@ static ssize_t proc_palm_to_sleep_read(struct file *file, char __user *buffer,
 		goto OUT;
 	}
 
-	snprintf(buf, PALM_BUF_SIZE - 1, "%d\n", ts->palm_to_sleep_enable);
+	snprintf(buf, PALM_BUF_SIZE - 1, "%d", ts->palm_to_sleep_enable);
 	ret = simple_read_from_buffer(buffer, count, ppos, buf, strlen(buf));
 	TPD_DETAIL("%s: get palm_to_sleep\n", __func__);
 
@@ -2507,6 +2511,70 @@ static const struct file_operations proc_game_switch_fops = {
     .read  = proc_game_switch_read,
     .open  = simple_open,
     .owner = THIS_MODULE,
+};
+
+static ssize_t proc_diaphragm_touch_level_write(struct file *file, const char __user *buffer, size_t count, loff_t *ppos)
+{
+	int value = 0;
+	char buf[6] = {0};
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	if (count > 5) {
+		TPD_INFO("%s:count > 5\n", __func__);
+		return count;
+	}
+
+	if (!ts) {
+		TPD_INFO("%s: ts is NULL\n", __func__);
+		return count;
+	}
+
+	if (!ts->ts_ops->diaphragm_touch_lv_set) {
+		TPD_INFO("%s:not support ts_ops->diaphragm_touch_lv_set callback\n", __func__);
+		return count;
+	}
+
+	tp_copy_from_user(buf, sizeof(buf), buffer, count, 5);
+
+	if (kstrtoint(buf, 10, &value)) {
+		TPD_INFO("%s: kstrtoint error\n", __func__);
+		return count;
+	}
+
+	mutex_lock(&ts->mutex);
+	ts->diaphragm_touch_level_chosen = value;
+
+	TPD_INFO("%s: level=%d\n", __func__, ts->diaphragm_touch_level_chosen);
+	if (!ts->is_suspended) {
+		ts->ts_ops->diaphragm_touch_lv_set(ts->chip_data, value);
+	} else {
+		TPD_INFO("%s: TP is_suspended.\n", __func__);
+	}
+	mutex_unlock(&ts->mutex);
+
+	return count;
+}
+
+static ssize_t proc_diaphragm_touch_level_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos)
+{
+	int ret = 0;
+	char page[PAGESIZE] = {0};
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	if (!ts || !ts->diaphragm_touch_support) {
+		snprintf(page, PAGESIZE - 1, "%d\n", -1);
+	} else {
+		snprintf(page, PAGESIZE - 1, "%u\n", ts->diaphragm_touch_level_chosen);
+	}
+	ret = simple_read_from_buffer(user_buf, count, ppos, page, strlen(page));
+	return ret;
+}
+
+static const struct file_operations proc_diaphragm_touch_level_fops = {
+	.write = proc_diaphragm_touch_level_write,
+	.read  = proc_diaphragm_touch_level_read,
+	.open  = simple_open,
+	.owner = THIS_MODULE,
 };
 
 //proc/touchpanel/black_screen_test
@@ -4980,6 +5048,14 @@ static int init_touchpanel_proc(struct touchpanel_data *ts)
         }
     }
 
+	if (ts->diaphragm_touch_support) {
+		prEntry_tmp = proc_create_data("diaphragm_touch", 0666, prEntry_tp, &proc_diaphragm_touch_level_fops, ts);
+		if (prEntry_tmp == NULL) {
+		ret = -ENOMEM;
+		TPD_INFO("%s: Couldn't create proc entry, %d\n", __func__, __LINE__);
+		}
+	}
+
     //proc files-step2-11:/proc/touchpanel/oplus_tp_noise_modetest
     if (ts->noise_modetest_support) {
         prEntry_tmp = proc_create_data("oplus_tp_noise_modetest", 0664, prEntry_tp, &proc_noise_modetest_fops, ts);
@@ -7049,6 +7125,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	ts->shutdown_support = of_property_read_bool(np, "shutdown_support");
 	ts->tp_data_record_support = of_property_read_bool(np, "tp_data_record_support");
 	ts->palm_to_sleep_support = of_property_read_bool(np, "palm_to_sleep_support");
+	ts->diaphragm_touch_support = of_property_read_bool(np, "diaphragm_touch_support");
 
 	if (!ts->sportify_aod_gesture_support) {
 		TPD_INFO("not support sportify_aod_gesture\n");
