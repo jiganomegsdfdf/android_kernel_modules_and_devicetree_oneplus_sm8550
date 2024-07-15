@@ -2893,7 +2893,7 @@ static fw_update_state ilitek_fw_update(void *chip_data,
 
 	if (ret < 0) {
 		ILI_ERR("Failed to upgrade firmware, ret = %d\n", ret);
-		return ret;
+		return FW_UPDATE_ERROR;
 	}
 
 	return FW_UPDATE_SUCCESS;
