@@ -7,7 +7,6 @@
 
  when       who        what, where, why
  --------   ---        ----------------------------------------------------------
- 06/24/21   Yang.Wang   Created file
 =============================================================================*/
 #include <linux/uaccess.h>
 #include <linux/module.h>
@@ -26,8 +25,7 @@
 #define PMIC_INFO_SECTOR_START_UFS  (1161*4096)
 #define OPLUS_PARTITION_OPPORESERVE_1                      "/dev/block/by-name/opporeserve1"
 #define OPLUS_PARTITION_OPLUSRESERVE_1                     "/dev/block/by-name/oplusreserve1"
-#define OPPORESERVER1_PATH                               (!access(OPLUS_PARTITION_OPPORESERVE_1, 0) ? OPLUS_PARTITION_OPPORESERVE_1 : OPLUS_PARTITION_OPLUSRESERVE_1 )
-//#define OPPORESERVER1_PATH                                OPLUS_PARTITION_OPLUSRESERVE_1
+#define OPLUSRESERVER1_PATH                               (!access(OPLUS_PARTITION_OPPORESERVE_1, 0) ? OPLUS_PARTITION_OPPORESERVE_1 : OPLUS_PARTITION_OPLUSRESERVE_1 )
 
 static struct PMICHistoryKernelStruct PMICHistory;
 static struct PMICHistoryKernelStruct *format = NULL;

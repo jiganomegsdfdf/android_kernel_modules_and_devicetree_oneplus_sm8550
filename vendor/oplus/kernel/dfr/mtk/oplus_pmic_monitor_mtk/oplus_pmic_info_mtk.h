@@ -7,7 +7,6 @@
 
  when       who        what, where, why
  --------   ---        ----------------------------------------------------------
- 06/24/21   Yang.Wang   Created file
 =============================================================================*/
 #ifndef __OPLUS_PMIC_INFO_MTK_H__
 #define __OPLUS_PMIC_INFO_MTK_H__

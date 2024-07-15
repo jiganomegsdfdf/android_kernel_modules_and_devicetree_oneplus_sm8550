@@ -21,10 +21,8 @@ extern void cls_dpi_mod_exit(void);
 extern int tmgp_sgame_init(void);
 extern void tmgp_sgame_fini(void);
 
-/*
 extern int wzry_stats_init(void);
 extern void wzry_stats_fini(void);
-*/
 
 extern int log_stream_init(void);
 extern void log_stream_fini(void);
@@ -49,12 +47,10 @@ static int __init data_modules_init(void)
 	if (ret) {
 		goto tgmp_failed;
 	}
-/*
 	ret = wzry_stats_init();
 	if (ret) {
 		goto wzry_failed;
 	}
-*/
 	ret = log_stream_init();
 	if(ret){
 	    goto log_failed;
@@ -63,10 +59,8 @@ static int __init data_modules_init(void)
 	return 0;
 
 log_failed:
-/*
     wzry_stats_fini();
 wzry_failed:
-*/
 	tmgp_sgame_fini();
 tgmp_failed:
 	cls_dpi_mod_exit();
@@ -81,9 +75,7 @@ dpi_failed:
 static void __exit data_modules_exit(void)
 {
 	log_stream_fini();
-/*
 	wzry_stats_fini();
-*/
 	tmgp_sgame_fini();
 	cls_dpi_mod_exit();
 	oplus_dpi_module_fini();

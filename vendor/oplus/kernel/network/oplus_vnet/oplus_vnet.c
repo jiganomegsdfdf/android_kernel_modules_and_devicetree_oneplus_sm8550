@@ -17,7 +17,6 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/moduleparam.h>
-#include <linux/version.h>
 #include <net/pkt_sched.h>
 #include <net/net_namespace.h>
 #include <linux/netfilter.h>
@@ -26,7 +25,6 @@
 #include <linux/skbuff.h>
 #include <linux/spinlock.h>
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 static int s_debug = 0;
 static int s_enable = 1;
 
@@ -699,7 +697,6 @@ static void __exit ovnet_dev_fini(void)
 
 module_init(ovnet_dev_init);
 module_exit(ovnet_dev_fini);
-#endif
 MODULE_LICENSE("GPL");
 MODULE_ALIAS_RTNL_LINK("ovnet");
 
