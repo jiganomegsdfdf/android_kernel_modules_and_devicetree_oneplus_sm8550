@@ -1601,11 +1601,14 @@ static void oplus_display_print_cmd_desc(const struct dsi_panel_cmd_set *cmd_set
 		len += snprintf(buf, sizeof(buf) - len, "%02X ", msg.type);
 		len += snprintf(buf + len, sizeof(buf) - len, "%02X ", 0x00);
 		len += snprintf(buf + len, sizeof(buf) - len, "%02X ", msg.channel);
-		len += snprintf(buf + len, sizeof(buf) - len, "%02X ", msg.flags);
+		/* Batch Flag */
+		len += snprintf(buf + len, sizeof(buf) - len, "%02X ",
+				(msg.flags & MIPI_DSI_MSG_BATCH_COMMAND) ?
+				MIPI_DSI_MSG_BATCH_COMMAND : 0x00);
+		/* Delay */
 		len += snprintf(buf + len, sizeof(buf) - len, "%02X ", cmds->post_wait_ms);
 		len += snprintf(buf + len, sizeof(buf) - len, "%02X %02X",
 				msg.tx_len >> 8, msg.tx_len & 0xFF);
-
 		/* Packet Payload */
 		for (j = 0 ; j < msg.tx_len ; j++) {
 			len += snprintf(buf + len, sizeof(buf) - len, " %02X", tx_buf[j]);

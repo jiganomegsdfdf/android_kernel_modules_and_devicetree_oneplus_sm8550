@@ -248,22 +248,24 @@ int oplus_panel_cmd_switch(struct dsi_panel *panel, enum dsi_cmd_set_type *type)
 	return 0;
 }
 
-void oplus_ctrl_print_cmd_desc(struct dsi_ctrl *dsi_ctrl, struct dsi_cmd_desc *cmd)
+void oplus_ctrl_print_cmd_desc(struct dsi_ctrl *dsi_ctrl, const struct mipi_dsi_msg *msg)
 {
 	char buf[512];
 	int len = 0;
 	size_t i;
-	const struct mipi_dsi_msg *msg = &cmd->msg;
 	char *tx_buf = (char*)msg->tx_buf;
 
 	memset(buf, 0, sizeof(buf));
 
 	/* Packet Info */
 	len += snprintf(buf, sizeof(buf) - len,  "%02X ", msg->type);
-	len += snprintf(buf + len, sizeof(buf) - len, "%02X ", 0x00);
+	/* Last bit */
+	/* len += snprintf(buf + len, sizeof(buf) - len, "%02X ", (msg->flags & MIPI_DSI_MSG_LASTCOMMAND) ? 1 : 0); */
+	len += snprintf(buf + len, sizeof(buf) - len, "%02X ", (msg->flags) ? 1 : 0);
 	len += snprintf(buf + len, sizeof(buf) - len, "%02X ", msg->channel);
 	len += snprintf(buf + len, sizeof(buf) - len, "%02X ", (unsigned int)msg->flags);
-	len += snprintf(buf + len, sizeof(buf) - len, "%02X ", cmd->post_wait_ms);
+	/* Delay */
+	/* len += snprintf(buf + len, sizeof(buf) - len, "%02X ", msg->wait_ms); */
 	len += snprintf(buf + len, sizeof(buf) - len, "%02X %02X ", msg->tx_len >> 8, msg->tx_len & 0x00FF);
 
 	/* Packet Payload */
