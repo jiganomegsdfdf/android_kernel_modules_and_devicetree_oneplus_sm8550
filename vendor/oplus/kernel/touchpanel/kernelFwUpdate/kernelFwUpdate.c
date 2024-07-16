@@ -1,7 +1,7 @@
 /***************************************************
  * File:kernelFwUpdate.c
  *
- * Copyright (c)  2008- 2030 Mobile communication Corp.ltd.
+ * Copyright (c)  2008- 2030  oplus Mobile communication Corp.ltd.
  * Description:
  *             kernelFwUpdate
  * Version:1.0:
@@ -119,5 +119,6 @@ static void __exit kernel_fw_update_exit(void)
 
 fs_initcall(kernel_fw_update_init);
 module_exit(kernel_fw_update_exit);
-MODULE_DESCRIPTION("kernel firmware loading support");
+MODULE_AUTHOR("Qicai.gu");
+MODULE_DESCRIPTION("oplus kernel firmware loading support");
 MODULE_LICENSE("GPL");
